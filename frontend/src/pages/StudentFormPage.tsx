@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { createStudent, getStudent, updateStudent, type StudentInput } from "../api/students";
 
-const emptyForm: StudentInput = { firstName: "", lastName: "", birthDate: null, notes: null };
+const emptyForm: StudentInput = { firstName: "", lastName: "", group: "" };
 
 export default function StudentFormPage() {
   const { id } = useParams();
@@ -12,9 +12,7 @@ export default function StudentFormPage() {
 
   useEffect(() => {
     if (id) {
-      getStudent(id).then((s) =>
-        setForm({ firstName: s.firstName, lastName: s.lastName, birthDate: s.birthDate, notes: s.notes }),
-      );
+      getStudent(id).then((s) => setForm({ firstName: s.firstName, lastName: s.lastName, group: s.group }));
     }
   }, [id]);
 
@@ -30,11 +28,11 @@ export default function StudentFormPage() {
 
   return (
     <div>
-      <h1>{isEdit ? "Edit student" : "New student"}</h1>
+      <h1>{isEdit ? "Redigera elev" : "Ny elev"}</h1>
       <form onSubmit={handleSubmit}>
         <div>
           <label>
-            First name
+            Förnamn
             <input
               value={form.firstName}
               onChange={(e) => setForm({ ...form, firstName: e.target.value })}
@@ -44,7 +42,7 @@ export default function StudentFormPage() {
         </div>
         <div>
           <label>
-            Last name
+            Efternamn
             <input
               value={form.lastName}
               onChange={(e) => setForm({ ...form, lastName: e.target.value })}
@@ -54,24 +52,16 @@ export default function StudentFormPage() {
         </div>
         <div>
           <label>
-            Birth date
+            Klass
             <input
-              type="date"
-              value={form.birthDate ?? ""}
-              onChange={(e) => setForm({ ...form, birthDate: e.target.value || null })}
+              value={form.group}
+              onChange={(e) => setForm({ ...form, group: e.target.value })}
+              placeholder="t.ex. TE23A"
+              required
             />
           </label>
         </div>
-        <div>
-          <label>
-            Notes
-            <textarea
-              value={form.notes ?? ""}
-              onChange={(e) => setForm({ ...form, notes: e.target.value || null })}
-            />
-          </label>
-        </div>
-        <button type="submit">{isEdit ? "Save" : "Create"}</button>
+        <button type="submit">{isEdit ? "Spara" : "Skapa"}</button>
       </form>
     </div>
   );
