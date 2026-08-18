@@ -25,7 +25,8 @@ studentsRouter.get("/:id/pdf", async (req, res) => {
     res.status(404).json({ error: "Eleven hittades inte" });
     return;
   }
-  const stream = await renderToStream(<StudentPdfDocument student={student} />);
+  const assignments = await prisma.assignment.findMany({ orderBy: { createdAt: "asc" } });
+  const stream = await renderToStream(<StudentPdfDocument student={student} assignments={assignments} />);
   const safeName = `${student.firstName}-${student.lastName}`.replace(/[^\w-]+/g, "_");
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `inline; filename="${safeName}.pdf"`);

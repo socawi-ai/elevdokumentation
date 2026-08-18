@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import { studentsRouter } from "./routes/students.js";
+import { assignmentsRouter } from "./routes/assignments.js";
 
 export const app = express();
 
@@ -12,3 +13,4 @@ app.get("/api/health", (_req, res) => {
 });
 
 app.use("/api/students", studentsRouter);
+app.use("/api/assignments", assignmentsRouter);
