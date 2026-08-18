@@ -10,7 +10,7 @@ const PAGE_MARGIN = 42.5; // 15mm
 const SAFETY_MARGIN = 40;
 const CONTENT_HEIGHT = 841.89 - PAGE_MARGIN * 2 - SAFETY_MARGIN;
 
-const TITLE_HEIGHT = 39;
+const TITLE_HEIGHT = 46; // title text + accent rule + margins
 const STUDENT_BLOCK_HEIGHT = 52;
 const SMALL_HEADER_HEIGHT = 27;
 const COURSE_HEADING_HEIGHT = 26; // heading text + margins, per course section
@@ -18,6 +18,8 @@ const COURSE_HEADING_HEIGHT = 26; // heading text + margins, per course section
 const ASSIGNMENT_ROW_HEIGHT = 16; // compact row holding 2 assignments side by side
 const GRADE_BOX_WIDTH = 30;
 const NOTES_LINE_HEIGHT = 16; // target spacing for handwritten-note ruled lines
+
+const ACCENT_COLOR = "#2F5D3A";
 
 const styles = StyleSheet.create({
   page: {
@@ -27,7 +29,13 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 20,
     fontWeight: 700,
-    marginBottom: 16,
+    color: ACCENT_COLOR,
+    marginBottom: 6,
+  },
+  titleRule: {
+    height: 2,
+    backgroundColor: ACCENT_COLOR,
+    marginBottom: 14,
   },
   studentBlock: {
     marginBottom: 20,
@@ -44,6 +52,7 @@ const styles = StyleSheet.create({
   courseHeading: {
     fontSize: 13,
     fontWeight: 700,
+    color: ACCENT_COLOR,
     marginTop: 8,
     marginBottom: 4,
   },
@@ -83,6 +92,21 @@ const styles = StyleSheet.create({
   notesLine: {
     borderBottomWidth: 0.75,
     borderBottomColor: "#999",
+  },
+  footer: {
+    position: "absolute",
+    bottom: 20,
+    left: PAGE_MARGIN,
+    right: PAGE_MARGIN,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingTop: 4,
+    borderTopWidth: 0.5,
+    borderTopColor: "#ccc",
+  },
+  footerText: {
+    fontSize: 8,
+    color: "#888",
   },
 });
 
@@ -141,6 +165,15 @@ function RuledNotes({ height }: { height: number }) {
   );
 }
 
+function Footer({ generatedOn }: { generatedOn: string }) {
+  return (
+    <View style={styles.footer} fixed>
+      <Text style={styles.footerText}>Utskriven: {generatedOn}</Text>
+      <Text style={styles.footerText} render={({ pageNumber, totalPages }) => `Sida ${pageNumber}/${totalPages}`} />
+    </View>
+  );
+}
+
 function CourseSection({
   name,
   assignments,
@@ -191,10 +224,13 @@ export function StudentPdfDocument({ student, assignments }: Props) {
   const page1NotesHeight = notesPerCourse(page1Courses, page1Fixed);
   const page2NotesHeight = notesPerCourse(page2Courses, page2Fixed);
 
+  const generatedOn = new Date().toISOString().slice(0, 10);
+
   return (
     <Document>
       <Page size="A4" style={styles.page}>
         <Text style={styles.title}>Kursuppföljning</Text>
+        <View style={styles.titleRule} />
         <View style={styles.studentBlock}>
           <Text style={styles.studentLine}>
             Elev: {student.firstName} {student.lastName}
@@ -204,6 +240,7 @@ export function StudentPdfDocument({ student, assignments }: Props) {
         {page1Courses.map((c) => (
           <CourseSection key={c.name} name={c.name} assignments={c.items} notesHeight={page1NotesHeight} />
         ))}
+        <Footer generatedOn={generatedOn} />
       </Page>
       <Page size="A4" style={styles.page}>
         <Text style={styles.smallHeader}>
@@ -212,6 +249,7 @@ export function StudentPdfDocument({ student, assignments }: Props) {
         {page2Courses.map((c) => (
           <CourseSection key={c.name} name={c.name} assignments={c.items} notesHeight={page2NotesHeight} />
         ))}
+        <Footer generatedOn={generatedOn} />
       </Page>
     </Document>
   );
