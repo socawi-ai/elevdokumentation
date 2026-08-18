@@ -31,6 +31,31 @@ studentsRouter.get("/pdf/all", async (_req, res) => {
   stream.pipe(res);
 });
 
+studentsRouter.get("/pdf/selected", async (req, res) => {
+  const idsParam = req.query.ids;
+  const ids = typeof idsParam === "string" ? idsParam.split(",").filter(Boolean) : [];
+  if (ids.length === 0) {
+    res.status(400).json({ error: "Inga elever valda" });
+    return;
+  }
+  const students = await prisma.student.findMany({ where: { id: { in: ids } } });
+  if (students.length === 0) {
+    res.status(400).json({ error: "Inga elever valda" });
+    return;
+  }
+  const byId = new Map(students.map((s) => [s.id, s]));
+  const orderedStudents = ids.map((id) => byId.get(id)).filter((s): s is (typeof students)[number] => Boolean(s));
+
+  const assignments = await prisma.assignment.findMany({ orderBy: { createdAt: "asc" } });
+  const courseSettings = await getCourseSettingsMap();
+  const stream = await renderToStream(
+    <AllStudentsPdfDocument students={orderedStudents} assignments={assignments} courseSettings={courseSettings} />,
+  );
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `inline; filename="valda-elever.pdf"`);
+  stream.pipe(res);
+});
+
 studentsRouter.get("/:id", async (req, res) => {
   const student = await prisma.student.findUnique({ where: { id: req.params.id } });
   if (!student) {

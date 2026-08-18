@@ -271,6 +271,26 @@ tbody tr:hover {
   background: #fafbfa;
 }
 
+th input[type="checkbox"],
+td input[type="checkbox"] {
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
+}
+
+.sortable-header {
+  cursor: pointer;
+  user-select: none;
+}
+
+.sortable-header:hover {
+  color: var(--color-accent-hover);
+}
+
+.sort-arrow {
+  font-size: 0.7rem;
+}
+
 /* Badges */
 
 .badge {
