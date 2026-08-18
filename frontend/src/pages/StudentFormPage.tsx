@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { createStudent, getStudent, updateStudent, type StudentInput } from "../api/students";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { createStudent, getStudent, listStudents, updateStudent, type Student, type StudentInput } from "../api/students";
 import { listAssignments, type Assignment } from "../api/assignments";
 import { listCourseSettings, type CourseSetting } from "../api/courseSettings";
 import { getStudentData, saveStudentData, type StudentDataBundle } from "../api/studentData";
@@ -55,9 +55,17 @@ export default function StudentFormPage() {
   const [dataLoaded, setDataLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [allStudents, setAllStudents] = useState<Student[]>([]);
+
+  useEffect(() => {
+    listStudents().then(setAllStudents);
+  }, []);
 
   useEffect(() => {
     if (!id) return;
+    setDataLoaded(false);
+    setForm(emptyForm);
+    setDataForm(emptyDataBundle());
     Promise.all([getStudent(id), listAssignments(), listCourseSettings(), getStudentData(id)]).then(
       ([student, assignmentList, courseSettingList, sparseData]) => {
         setForm({ firstName: student.firstName, lastName: student.lastName, group: student.group });
@@ -112,129 +120,179 @@ export default function StudentFormPage() {
     }
   }
 
+  const currentIndex = allStudents.findIndex((s) => s.id === id);
+  const prevStudent = currentIndex > 0 ? allStudents[currentIndex - 1] : null;
+  const nextStudent =
+    currentIndex >= 0 && currentIndex < allStudents.length - 1 ? allStudents[currentIndex + 1] : null;
+
   return (
-    <div>
-      <h1>{isEdit ? "Redigera elev" : "Ny elev"}</h1>
-      {error && (
-        <p className="hint" style={{ color: "var(--color-danger)" }}>
-          {error}
-        </p>
+    <div className="edit-layout">
+      {allStudents.length > 0 && (
+        <aside className="student-sidebar">
+          <div className="sidebar-heading">Elever</div>
+          <ul className="sidebar-list">
+            {allStudents.map((s) => (
+              <li key={s.id}>
+                <Link to={`/students/${s.id}/edit`} className={s.id === id ? "active" : undefined}>
+                  {s.firstName} {s.lastName}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </aside>
       )}
-      <form onSubmit={handleSubmit}>
-        <div className="form-card">
-          <div className="field">
-            <label htmlFor="firstName">Förnamn</label>
-            <input
-              id="firstName"
-              value={form.firstName}
-              onChange={(e) => setForm({ ...form, firstName: e.target.value })}
-              required
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="lastName">Efternamn</label>
-            <input
-              id="lastName"
-              value={form.lastName}
-              onChange={(e) => setForm({ ...form, lastName: e.target.value })}
-              required
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="group">Klass</label>
-            <input
-              id="group"
-              value={form.group}
-              onChange={(e) => setForm({ ...form, group: e.target.value })}
-              placeholder="t.ex. TE23A"
-              required
-            />
-          </div>
+
+      <div className="edit-main">
+        <div className="page-header">
+          <h1>{isEdit ? "Redigera elev" : "Ny elev"}</h1>
+          {isEdit && (
+            <div className="actions">
+              <button
+                type="button"
+                className="btn btn-sm"
+                disabled={!prevStudent}
+                onClick={() => prevStudent && navigate(`/students/${prevStudent.id}/edit`)}
+              >
+                ← Föregående
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm"
+                disabled={!nextStudent}
+                onClick={() => nextStudent && navigate(`/students/${nextStudent.id}/edit`)}
+              >
+                Nästa →
+              </button>
+            </div>
+          )}
         </div>
 
-        {isEdit && dataLoaded && (
-          <>
-            <h2 style={{ marginTop: "2rem" }}>Digital dokumentation</h2>
-            <p className="hint" style={{ marginBottom: "1rem" }}>
-              Fylls i här, visas ifyllt på elevens PDF istället för tomma rutor/rader.
-            </p>
-            <div className="course-grid">
-              {COURSES.map((course) => {
-                const courseAssignments = assignments.filter((a) => a.course === course);
-                const delprov = NATIONAL_TEST_DELPROV[course];
-                const showNationalTest =
-                  courseSettings.find((c) => c.course === course)?.showNationalTest ?? false;
-                const notes = dataForm.courseNotes[course]?.notes ?? "";
-
-                return (
-                  <div className="course-card" key={course}>
-                    <h2>{course}</h2>
-
-                    <div className="course-subheading">Uppgifter</div>
-                    {courseAssignments.length === 0 ? (
-                      <p className="hint">Inga uppgifter tillagda ännu.</p>
-                    ) : (
-                      <div className="grade-list">
-                        {courseAssignments.map((a) => (
-                          <div className="grade-row" key={a.id}>
-                            <span>{a.name}</span>
-                            <input
-                              className="grade-input"
-                              maxLength={4}
-                              value={dataForm.assignmentGrades[a.id] ?? ""}
-                              onChange={(e) => setAssignmentGrade(a.id, e.target.value)}
-                            />
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {delprov && showNationalTest && (
-                      <>
-                        <div className="course-subheading">Nationella prov</div>
-                        <div className="grade-list">
-                          {delprov.map((d) => (
-                            <div className="grade-row" key={d}>
-                              <span>{d}</span>
-                              <input
-                                className="grade-input"
-                                maxLength={4}
-                                value={dataForm.nationalTestGrades[course]?.[d] ?? ""}
-                                onChange={(e) => setDelprovGrade(course, d, e.target.value)}
-                              />
-                            </div>
-                          ))}
-                          <div className="grade-row">
-                            <span>Sammanfattande betyg</span>
-                            <input
-                              className="grade-input"
-                              maxLength={4}
-                              value={dataForm.courseNotes[course]?.summaryGrade ?? ""}
-                              onChange={(e) => setCourseNoteField(course, "summaryGrade", e.target.value)}
-                            />
-                          </div>
-                        </div>
-                      </>
-                    )}
-
-                    <div className="course-subheading">Anteckningar</div>
-                    <textarea
-                      rows={4}
-                      style={{ width: "100%" }}
-                      value={notes}
-                      onChange={(e) => setCourseNoteField(course, "notes", e.target.value)}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          </>
+        {error && (
+          <p className="hint" style={{ color: "var(--color-danger)" }}>
+            {error}
+          </p>
         )}
 
-        <button className="btn btn-primary" type="submit" disabled={saving} style={{ marginTop: "1.5rem" }}>
-          {saving ? "Sparar…" : isEdit ? "Spara" : "Skapa"}
-        </button>
-      </form>
+        {isEdit && !dataLoaded ? (
+          <p className="loading-state">Laddar…</p>
+        ) : (
+          <form onSubmit={handleSubmit}>
+            <div className="form-card">
+              <div className="field">
+                <label htmlFor="firstName">Förnamn</label>
+                <input
+                  id="firstName"
+                  value={form.firstName}
+                  onChange={(e) => setForm({ ...form, firstName: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="lastName">Efternamn</label>
+                <input
+                  id="lastName"
+                  value={form.lastName}
+                  onChange={(e) => setForm({ ...form, lastName: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="group">Klass</label>
+                <input
+                  id="group"
+                  value={form.group}
+                  onChange={(e) => setForm({ ...form, group: e.target.value })}
+                  placeholder="t.ex. TE23A"
+                  required
+                />
+              </div>
+            </div>
+
+            {isEdit && dataLoaded && (
+              <>
+                <h2 style={{ marginTop: "2rem" }}>Digital dokumentation</h2>
+                <p className="hint" style={{ marginBottom: "1rem" }}>
+                  Fylls i här, visas ifyllt på elevens PDF istället för tomma rutor/rader.
+                </p>
+                <div className="course-grid">
+                  {COURSES.map((course) => {
+                    const courseAssignments = assignments.filter((a) => a.course === course);
+                    const delprov = NATIONAL_TEST_DELPROV[course];
+                    const showNationalTest =
+                      courseSettings.find((c) => c.course === course)?.showNationalTest ?? false;
+                    const notes = dataForm.courseNotes[course]?.notes ?? "";
+
+                    return (
+                      <div className="course-card" key={course}>
+                        <h2>{course}</h2>
+
+                        <div className="course-subheading">Uppgifter</div>
+                        {courseAssignments.length === 0 ? (
+                          <p className="hint">Inga uppgifter tillagda ännu.</p>
+                        ) : (
+                          <div className="grade-list">
+                            {courseAssignments.map((a) => (
+                              <div className="grade-row" key={a.id}>
+                                <span>{a.name}</span>
+                                <input
+                                  className="grade-input"
+                                  maxLength={4}
+                                  value={dataForm.assignmentGrades[a.id] ?? ""}
+                                  onChange={(e) => setAssignmentGrade(a.id, e.target.value)}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {delprov && showNationalTest && (
+                          <>
+                            <div className="course-subheading">Nationella prov</div>
+                            <div className="grade-list">
+                              {delprov.map((d) => (
+                                <div className="grade-row" key={d}>
+                                  <span>{d}</span>
+                                  <input
+                                    className="grade-input"
+                                    maxLength={4}
+                                    value={dataForm.nationalTestGrades[course]?.[d] ?? ""}
+                                    onChange={(e) => setDelprovGrade(course, d, e.target.value)}
+                                  />
+                                </div>
+                              ))}
+                              <div className="grade-row">
+                                <span>Sammanfattande betyg</span>
+                                <input
+                                  className="grade-input"
+                                  maxLength={4}
+                                  value={dataForm.courseNotes[course]?.summaryGrade ?? ""}
+                                  onChange={(e) => setCourseNoteField(course, "summaryGrade", e.target.value)}
+                                />
+                              </div>
+                            </div>
+                          </>
+                        )}
+
+                        <div className="course-subheading">Anteckningar</div>
+                        <textarea
+                          rows={4}
+                          style={{ width: "100%" }}
+                          value={notes}
+                          onChange={(e) => setCourseNoteField(course, "notes", e.target.value)}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            <button className="btn btn-primary" type="submit" disabled={saving} style={{ marginTop: "1.5rem" }}>
+              {saving ? "Sparar…" : isEdit ? "Spara" : "Skapa"}
+            </button>
+          </form>
+        )}
+      </div>
     </div>
   );
 }
