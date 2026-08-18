@@ -31,32 +31,39 @@ export default function StudentListPage() {
       {students.length === 0 ? (
         <p>Inga elever ännu.</p>
       ) : (
-        <table>
-          <thead>
-            <tr>
-              <th>Förnamn</th>
-              <th>Efternamn</th>
-              <th>Klass</th>
-              <th>Åtgärder</th>
-            </tr>
-          </thead>
-          <tbody>
-            {students.map((s) => (
-              <tr key={s.id}>
-                <td>{s.firstName}</td>
-                <td>{s.lastName}</td>
-                <td>{s.group}</td>
-                <td>
-                  <Link to={`/students/${s.id}/edit`}>Redigera</Link>{" "}
-                  <a href={`/api/students/${s.id}/pdf`} target="_blank" rel="noreferrer">
-                    Skriv ut (PDF)
-                  </a>{" "}
-                  <button onClick={() => handleDelete(s.id)}>Ta bort</button>
-                </td>
+        <>
+          <p>
+            <a href="/api/students/pdf/all" target="_blank" rel="noreferrer">
+              Skriv ut alla ({students.length}) (PDF)
+            </a>
+          </p>
+          <table>
+            <thead>
+              <tr>
+                <th>Förnamn</th>
+                <th>Efternamn</th>
+                <th>Klass</th>
+                <th>Åtgärder</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {students.map((s) => (
+                <tr key={s.id}>
+                  <td>{s.firstName}</td>
+                  <td>{s.lastName}</td>
+                  <td>{s.group}</td>
+                  <td>
+                    <Link to={`/students/${s.id}/edit`}>Redigera</Link>{" "}
+                    <a href={`/api/students/${s.id}/pdf`} target="_blank" rel="noreferrer">
+                      Skriv ut (PDF)
+                    </a>{" "}
+                    <button onClick={() => handleDelete(s.id)}>Ta bort</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
       )}
     </div>
   );
