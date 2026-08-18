@@ -1,4 +1,4 @@
-import { Routes, Route, Link } from "react-router-dom";
+import { Routes, Route, NavLink } from "react-router-dom";
 import StudentListPage from "./pages/StudentListPage";
 import StudentFormPage from "./pages/StudentFormPage";
 import StudentImportPage from "./pages/StudentImportPage";
@@ -7,10 +7,20 @@ import AssignmentsPage from "./pages/AssignmentsPage";
 export default function App() {
   return (
     <div>
-      <header>
-        <Link to="/">Elevdokumentation</Link> <Link to="/uppgifter">Uppgifter</Link>
+      <header className="app-header">
+        <NavLink to="/" className="brand">
+          Elevdokumentation
+        </NavLink>
+        <nav className="app-nav">
+          <NavLink to="/" end className={({ isActive }) => (isActive ? "active" : undefined)}>
+            Elever
+          </NavLink>
+          <NavLink to="/uppgifter" className={({ isActive }) => (isActive ? "active" : undefined)}>
+            Uppgifter
+          </NavLink>
+        </nav>
       </header>
-      <main>
+      <main className="container">
         <Routes>
           <Route path="/" element={<StudentListPage />} />
           <Route path="/students/new" element={<StudentFormPage />} />
