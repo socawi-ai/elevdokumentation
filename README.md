@@ -29,16 +29,19 @@ The SQLite database lives at `data/studentracker.db`, inside the workspace bind 
 
 The root `Dockerfile` (not `.devcontainer/Dockerfile`, which is dev-only) builds a single production image: compiled backend + built static frontend, served together by one Express process on port 3000. On every push to `main`/`master`, `.github/workflows/docker-publish.yml` builds and publishes it to `ghcr.io/socawi-ai/elevdokumentation:latest` (also tagged with the commit SHA).
 
-**First time only**: after the first successful workflow run, the GitHub package defaults to private — go to the package's settings on GitHub and set visibility to however you want to pull it (public, or keep private and `docker login ghcr.io` with a PAT that has `read:packages` on your server).
+Verified: since this repo is public, the published package is pullable with no authentication at all — `docker pull ghcr.io/socawi-ai/elevdokumentation:latest` just works on a fresh machine. If the repo is ever made private, the package would need `docker login ghcr.io` on the server with a PAT that has `read:packages`.
 
-**Running it** — the database lives in `/app/data` inside the container; mount that as a volume so it survives image updates. Migrations run automatically on container start.
+**Running it** — the root `docker-compose.yml` runs the published image (not a local build — that's what `.devcontainer/docker-compose.yml` is for). The database is bind-mounted at `./data` next to the compose file (same pattern as local dev) — easy to find and back up, and survives image updates; migrations run automatically on container start.
 
 ```
-docker run -d \
-  --name elevdokumentation \
-  -p 3000:3000 \
-  -v elevdokumentation-data:/app/data \
-  ghcr.io/socawi-ai/elevdokumentation:latest
+git clone https://github.com/socawi-ai/elevdokumentation.git
+cd elevdokumentation
+docker compose pull
+docker compose up -d
 ```
 
-Put this behind whatever reverse proxy + auth (e.g. TinyAuth forward-auth) you're already running on the server — the app itself has no authentication, by design, so it must never be reachable directly from outside that proxy.
+`./data` must exist and be owned by the container's non-root user (uid 1000) before the first start — Docker Compose auto-creates a bind-mount source that doesn't exist yet, but as **root**, which then breaks the container's ability to write its own database (confirmed: it crash-loops with "unable to open database file"). Cloning this repo already avoids that, since `data/.gitkeep` is tracked and the directory exists (owned by whatever user ran `git clone`) before Compose ever runs. If you ever delete that folder, recreate it yourself first (`mkdir -p data`) rather than letting Compose create it.
+
+To update to a newer image later, `docker compose pull && docker compose up -d` again — `prisma migrate deploy` runs on every start and only applies whatever's new.
+
+Put this behind whatever reverse proxy + auth (e.g. TinyAuth forward-auth) you're already running on the server — the app itself has no authentication, by design, so it must never be reachable directly from outside that proxy. If the proxy reaches services over a shared Docker network rather than published host ports, drop the `ports:` block in `docker-compose.yml` and attach the service to that network instead.
