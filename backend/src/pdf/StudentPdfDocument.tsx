@@ -1,8 +1,11 @@
 import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { Student, Assignment } from "@prisma/client";
 import { PAGE_1_COURSES, PAGE_2_COURSES, NATIONAL_TEST_DELPROV, type CourseName } from "../courses.js";
+import type { StudentDataBundle } from "../studentData.js";
 
 const PAGE_MARGIN = 42.5; // 15mm
+const PAGE_WIDTH = 595.28;
+const CONTENT_WIDTH = PAGE_WIDTH - PAGE_MARGIN * 2;
 // Safety buffer: the fixed-height constants below are hand-measured estimates
 // of react-pdf's actual rendered heights, not exact — reserving slack here
 // absorbs that per-element drift so it can never accumulate into an overflow
@@ -22,6 +25,15 @@ const NOTES_LINE_HEIGHT = 16; // target spacing for handwritten-note ruled lines
 const NATIONAL_TEST_HEADING_HEIGHT = 14; // "Nationella prov" sub-heading + margins
 
 const ACCENT_COLOR = "#2F5D3A";
+
+// Notes word-wrap: react-pdf has no synchronous text-measurement API, so line
+// capacity is estimated from an average Helvetica glyph width. The multiplier
+// is biased high (wider average char) to *underestimate* chars-per-line —
+// wasting a little blank space at a line's end is harmless, an overflowing
+// glyph past the box border is the failure mode this must avoid.
+const NOTES_FONT_SIZE = 9;
+const NOTES_AVG_CHAR_WIDTH = NOTES_FONT_SIZE * 0.55;
+const NOTES_HORIZONTAL_PADDING = 4;
 
 const styles = StyleSheet.create({
   page: {
@@ -85,6 +97,18 @@ const styles = StyleSheet.create({
     height: ASSIGNMENT_ROW_HEIGHT - 4,
     borderWidth: 1,
     borderColor: "#000",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  gradeBoxText: {
+    // Verified empirically (see PDF text-verification history): at this box's
+    // 12pt height, react-pdf silently fails to render Text at fontSize 10 —
+    // it needs fontSize <= ~8 to reliably fit and actually appear. Do not
+    // raise this without re-verifying grade text actually appears in the
+    // rendered PDF (pdftotext), not just checking the code compiles.
+    fontSize: 8,
+    fontWeight: 700,
   },
   emptyText: {
     flex: 1,
@@ -94,6 +118,13 @@ const styles = StyleSheet.create({
   notesLine: {
     borderBottomWidth: 0.75,
     borderBottomColor: "#999",
+    justifyContent: "flex-end",
+  },
+  notesLineText: {
+    fontSize: NOTES_FONT_SIZE,
+    paddingLeft: NOTES_HORIZONTAL_PADDING,
+    paddingRight: NOTES_HORIZONTAL_PADDING,
+    overflow: "hidden",
   },
   nationalTestBlock: {
     marginTop: 4,
@@ -124,6 +155,9 @@ const styles = StyleSheet.create({
     height: ASSIGNMENT_ROW_HEIGHT - 4,
     borderWidth: 1.5,
     borderColor: "#000",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
   },
   footer: {
     position: "absolute",
@@ -142,11 +176,16 @@ const styles = StyleSheet.create({
   },
 });
 
-function groupByCourse(assignments: Pick<Assignment, "course" | "name">[]): Map<string, string[]> {
-  const map = new Map<string, string[]>();
+interface AssignmentItem {
+  name: string;
+  grade: string;
+}
+
+function groupByCourse(assignments: Pick<Assignment, "id" | "course" | "name">[]): Map<string, Pick<Assignment, "id" | "name">[]> {
+  const map = new Map<string, Pick<Assignment, "id" | "name">[]>();
   for (const a of assignments) {
     if (!map.has(a.course)) map.set(a.course, []);
-    map.get(a.course)!.push(a.name);
+    map.get(a.course)!.push({ id: a.id, name: a.name });
   }
   return map;
 }
@@ -159,39 +198,92 @@ function chunkPairs<T>(items: T[]): [T, T | null][] {
   return pairs;
 }
 
-function AssignmentColumn({ name }: { name: string | null }) {
+function charsPerLine(lineWidth: number): number {
+  return Math.max(1, Math.floor((lineWidth - NOTES_HORIZONTAL_PADDING * 2) / NOTES_AVG_CHAR_WIDTH));
+}
+
+function wrapNotes(text: string, maxCharsPerLine: number, maxLines: number): string[] {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let current = "";
+
+  function pushCurrent() {
+    if (current) lines.push(current);
+    current = "";
+  }
+
+  for (const word of words) {
+    if (word.length > maxCharsPerLine) {
+      pushCurrent();
+      for (let i = 0; i < word.length; i += maxCharsPerLine) {
+        lines.push(word.slice(i, i + maxCharsPerLine));
+      }
+      continue;
+    }
+    const candidate = current ? `${current} ${word}` : word;
+    if (candidate.length <= maxCharsPerLine) {
+      current = candidate;
+    } else {
+      pushCurrent();
+      current = word;
+    }
+  }
+  pushCurrent();
+
+  if (lines.length <= maxLines) return lines;
+
+  const truncated = lines.slice(0, maxLines);
+  const ellipsis = "…";
+  const keep = Math.max(0, maxCharsPerLine - ellipsis.length);
+  truncated[maxLines - 1] = truncated[maxLines - 1].slice(0, keep) + ellipsis;
+  return truncated;
+}
+
+function GradeBox({ grade, wide }: { grade: string; wide?: boolean }) {
+  return (
+    <View style={wide ? styles.summaryGradeBox : styles.gradeBox}>
+      {grade && <Text style={styles.gradeBoxText}>{grade}</Text>}
+    </View>
+  );
+}
+
+function AssignmentColumn({ item }: { item: AssignmentItem | null }) {
   return (
     <View style={styles.assignmentColumn}>
-      {name !== null && (
+      {item !== null && (
         <>
-          <Text style={styles.assignmentName}>{name}</Text>
-          <View style={styles.gradeBox} />
+          <Text style={styles.assignmentName}>{item.name}</Text>
+          <GradeBox grade={item.grade} />
         </>
       )}
     </View>
   );
 }
 
-function AssignmentPairRow({ pair }: { pair: [string, string | null] }) {
+function AssignmentPairRow({ pair }: { pair: [AssignmentItem, AssignmentItem | null] }) {
   return (
     <View style={styles.assignmentRow}>
       <View style={[styles.assignmentColumn, styles.assignmentColumnDivider]}>
-        <Text style={styles.assignmentName}>{pair[0]}</Text>
-        <View style={styles.gradeBox} />
+        <Text style={styles.assignmentName}>{pair[0].name}</Text>
+        <GradeBox grade={pair[0].grade} />
       </View>
-      <AssignmentColumn name={pair[1]} />
+      <AssignmentColumn item={pair[1]} />
     </View>
   );
 }
 
-function RuledNotes({ height }: { height: number }) {
+function RuledNotes({ height, notes }: { height: number; notes: string }) {
   if (height <= 0) return null;
   const count = Math.max(1, Math.floor(height / NOTES_LINE_HEIGHT));
   const lineHeight = height / count;
+  const trimmed = notes.trim();
+  const wrapped = trimmed ? wrapNotes(trimmed, charsPerLine(CONTENT_WIDTH), count) : [];
   return (
     <View>
       {Array.from({ length: count }).map((_, i) => (
-        <View key={i} style={[styles.notesLine, { height: lineHeight }]} />
+        <View key={i} style={[styles.notesLine, { height: lineHeight }]}>
+          {wrapped[i] && <Text style={styles.notesLineText}>{wrapped[i]}</Text>}
+        </View>
       ))}
     </View>
   );
@@ -206,21 +298,21 @@ function Footer({ generatedOn }: { generatedOn: string }) {
   );
 }
 
-type NationalTestCell = { kind: "delprov"; name: string } | { kind: "summary" };
+type NationalTestCell = { kind: "delprov"; name: string; grade: string } | { kind: "summary"; grade: string };
 
 function NationalTestCellContent({ cell }: { cell: NationalTestCell }) {
   if (cell.kind === "summary") {
     return (
       <>
         <Text style={styles.summaryLabel}>Sammanfattande betyg</Text>
-        <View style={styles.summaryGradeBox} />
+        <GradeBox grade={cell.grade} wide />
       </>
     );
   }
   return (
     <>
       <Text style={styles.assignmentName}>{cell.name}</Text>
-      <View style={styles.gradeBox} />
+      <GradeBox grade={cell.grade} />
     </>
   );
 }
@@ -236,10 +328,18 @@ function NationalTestPairRow({ pair }: { pair: [NationalTestCell, NationalTestCe
   );
 }
 
-function NationalTestSection({ delprov }: { delprov: readonly string[] }) {
+function NationalTestSection({
+  delprov,
+  grades,
+  summaryGrade,
+}: {
+  delprov: readonly string[];
+  grades: Record<string, string>;
+  summaryGrade: string;
+}) {
   const cells: NationalTestCell[] = [
-    ...delprov.map((name): NationalTestCell => ({ kind: "delprov", name })),
-    { kind: "summary" },
+    ...delprov.map((name): NationalTestCell => ({ kind: "delprov", name, grade: grades[name] ?? "" })),
+    { kind: "summary", grade: summaryGrade },
   ];
   return (
     <View style={styles.nationalTestBlock}>
@@ -255,12 +355,18 @@ function CourseSection({
   name,
   assignments,
   notesHeight,
+  notes,
   nationalTestDelprov,
+  nationalTestGrades,
+  nationalTestSummaryGrade,
 }: {
   name: string;
-  assignments: string[];
+  assignments: AssignmentItem[];
   notesHeight: number;
+  notes: string;
   nationalTestDelprov?: readonly string[];
+  nationalTestGrades?: Record<string, string>;
+  nationalTestSummaryGrade?: string;
 }) {
   return (
     <View>
@@ -272,16 +378,23 @@ function CourseSection({
       ) : (
         chunkPairs(assignments).map((pair, i) => <AssignmentPairRow key={i} pair={pair} />)
       )}
-      {nationalTestDelprov && <NationalTestSection delprov={nationalTestDelprov} />}
-      <RuledNotes height={notesHeight} />
+      {nationalTestDelprov && (
+        <NationalTestSection
+          delprov={nationalTestDelprov}
+          grades={nationalTestGrades ?? {}}
+          summaryGrade={nationalTestSummaryGrade ?? ""}
+        />
+      )}
+      <RuledNotes height={notesHeight} notes={notes} />
     </View>
   );
 }
 
 interface Props {
   student: Pick<Student, "firstName" | "lastName" | "group">;
-  assignments: Pick<Assignment, "course" | "name">[];
+  assignments: Pick<Assignment, "id" | "course" | "name">[];
   courseSettings: Record<string, boolean>;
+  data: StudentDataBundle;
 }
 
 function nationalTestExtraHeight(course: CourseName, courseSettings: Record<string, boolean>): number {
@@ -292,22 +405,32 @@ function nationalTestExtraHeight(course: CourseName, courseSettings: Record<stri
   return NATIONAL_TEST_HEADING_HEIGHT + rowCount * ASSIGNMENT_ROW_HEIGHT;
 }
 
-function StudentPages({ student, assignments, courseSettings }: Props) {
+function StudentPages({ student, assignments, courseSettings, data }: Props) {
   const byCourse = groupByCourse(assignments);
 
   function buildCourses(courseNames: readonly CourseName[]) {
-    return courseNames.map((course) => ({
-      name: course,
-      items: byCourse.get(course) ?? [],
-      extraHeight: nationalTestExtraHeight(course, courseSettings),
-      nationalTestDelprov: courseSettings[course] ? NATIONAL_TEST_DELPROV[course] : undefined,
-    }));
+    return courseNames.map((course) => {
+      const items: AssignmentItem[] = (byCourse.get(course) ?? []).map((a) => ({
+        name: a.name,
+        grade: data.assignmentGrades[a.id] ?? "",
+      }));
+      const courseNote = data.courseNotes[course];
+      return {
+        name: course,
+        items,
+        extraHeight: nationalTestExtraHeight(course, courseSettings),
+        nationalTestDelprov: courseSettings[course] ? NATIONAL_TEST_DELPROV[course] : undefined,
+        nationalTestGrades: data.nationalTestGrades[course] ?? {},
+        notes: courseNote?.notes ?? "",
+        summaryGrade: courseNote?.summaryGrade ?? "",
+      };
+    });
   }
 
   const page1Courses = buildCourses(PAGE_1_COURSES);
   const page2Courses = buildCourses(PAGE_2_COURSES);
 
-  function notesPerCourse(courses: { items: string[]; extraHeight: number }[], fixedOverhead: number): number {
+  function notesPerCourse(courses: { items: AssignmentItem[]; extraHeight: number }[], fixedOverhead: number): number {
     const assignmentRowsTotal = courses.reduce((sum, c) => {
       const rowCount = c.items.length === 0 ? 1 : Math.ceil(c.items.length / 2);
       return sum + rowCount * ASSIGNMENT_ROW_HEIGHT + c.extraHeight;
@@ -341,7 +464,10 @@ function StudentPages({ student, assignments, courseSettings }: Props) {
             name={c.name}
             assignments={c.items}
             notesHeight={page1NotesHeight}
+            notes={c.notes}
             nationalTestDelprov={c.nationalTestDelprov}
+            nationalTestGrades={c.nationalTestGrades}
+            nationalTestSummaryGrade={c.summaryGrade}
           />
         ))}
         <Footer generatedOn={generatedOn} />
@@ -356,7 +482,10 @@ function StudentPages({ student, assignments, courseSettings }: Props) {
             name={c.name}
             assignments={c.items}
             notesHeight={page2NotesHeight}
+            notes={c.notes}
             nationalTestDelprov={c.nationalTestDelprov}
+            nationalTestGrades={c.nationalTestGrades}
+            nationalTestSummaryGrade={c.summaryGrade}
           />
         ))}
         <Footer generatedOn={generatedOn} />
@@ -365,10 +494,12 @@ function StudentPages({ student, assignments, courseSettings }: Props) {
   );
 }
 
-export function StudentPdfDocument({ student, assignments, courseSettings }: Props) {
+const EMPTY_BUNDLE: StudentDataBundle = { assignmentGrades: {}, nationalTestGrades: {}, courseNotes: {} };
+
+export function StudentPdfDocument({ student, assignments, courseSettings, data }: Props) {
   return (
     <Document>
-      <StudentPages student={student} assignments={assignments} courseSettings={courseSettings} />
+      <StudentPages student={student} assignments={assignments} courseSettings={courseSettings} data={data} />
     </Document>
   );
 }
@@ -377,15 +508,23 @@ export function AllStudentsPdfDocument({
   students,
   assignments,
   courseSettings,
+  dataByStudentId,
 }: {
   students: Pick<Student, "id" | "firstName" | "lastName" | "group">[];
-  assignments: Pick<Assignment, "course" | "name">[];
+  assignments: Pick<Assignment, "id" | "course" | "name">[];
   courseSettings: Record<string, boolean>;
+  dataByStudentId: Map<string, StudentDataBundle>;
 }) {
   return (
     <Document>
       {students.map((student) => (
-        <StudentPages key={student.id} student={student} assignments={assignments} courseSettings={courseSettings} />
+        <StudentPages
+          key={student.id}
+          student={student}
+          assignments={assignments}
+          courseSettings={courseSettings}
+          data={dataByStudentId.get(student.id) ?? EMPTY_BUNDLE}
+        />
       ))}
     </Document>
   );

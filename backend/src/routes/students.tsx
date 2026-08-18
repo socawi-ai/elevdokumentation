@@ -2,6 +2,7 @@ import { Router } from "express";
 import { renderToStream } from "@react-pdf/renderer";
 import { prisma } from "../db.js";
 import { StudentPdfDocument, AllStudentsPdfDocument } from "../pdf/StudentPdfDocument.js";
+import { getStudentDataBundle, getStudentDataBundles, saveStudentDataBundle, validateStudentDataBundleInput } from "../studentData.js";
 
 export const studentsRouter = Router();
 
@@ -23,8 +24,14 @@ studentsRouter.get("/pdf/all", async (_req, res) => {
   }
   const assignments = await prisma.assignment.findMany({ orderBy: { createdAt: "asc" } });
   const courseSettings = await getCourseSettingsMap();
+  const dataByStudentId = await getStudentDataBundles(students.map((s) => s.id));
   const stream = await renderToStream(
-    <AllStudentsPdfDocument students={students} assignments={assignments} courseSettings={courseSettings} />,
+    <AllStudentsPdfDocument
+      students={students}
+      assignments={assignments}
+      courseSettings={courseSettings}
+      dataByStudentId={dataByStudentId}
+    />,
   );
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `inline; filename="alla-elever.pdf"`);
@@ -48,8 +55,14 @@ studentsRouter.get("/pdf/selected", async (req, res) => {
 
   const assignments = await prisma.assignment.findMany({ orderBy: { createdAt: "asc" } });
   const courseSettings = await getCourseSettingsMap();
+  const dataByStudentId = await getStudentDataBundles(orderedStudents.map((s) => s.id));
   const stream = await renderToStream(
-    <AllStudentsPdfDocument students={orderedStudents} assignments={assignments} courseSettings={courseSettings} />,
+    <AllStudentsPdfDocument
+      students={orderedStudents}
+      assignments={assignments}
+      courseSettings={courseSettings}
+      dataByStudentId={dataByStudentId}
+    />,
   );
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `inline; filename="valda-elever.pdf"`);
@@ -73,13 +86,44 @@ studentsRouter.get("/:id/pdf", async (req, res) => {
   }
   const assignments = await prisma.assignment.findMany({ orderBy: { createdAt: "asc" } });
   const courseSettings = await getCourseSettingsMap();
+  const data = await getStudentDataBundle(student.id);
   const stream = await renderToStream(
-    <StudentPdfDocument student={student} assignments={assignments} courseSettings={courseSettings} />,
+    <StudentPdfDocument student={student} assignments={assignments} courseSettings={courseSettings} data={data} />,
   );
   const safeName = `${student.firstName}-${student.lastName}`.replace(/[^\w-]+/g, "_");
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `inline; filename="${safeName}.pdf"`);
   stream.pipe(res);
+});
+
+studentsRouter.get("/:id/data", async (req, res) => {
+  const student = await prisma.student.findUnique({ where: { id: req.params.id } });
+  if (!student) {
+    res.status(404).json({ error: "Eleven hittades inte" });
+    return;
+  }
+  const data = await getStudentDataBundle(student.id);
+  res.json(data);
+});
+
+studentsRouter.put("/:id/data", async (req, res) => {
+  const student = await prisma.student.findUnique({ where: { id: req.params.id } });
+  if (!student) {
+    res.status(404).json({ error: "Eleven hittades inte" });
+    return;
+  }
+  const validated = validateStudentDataBundleInput(req.body);
+  if (!validated.ok) {
+    res.status(400).json({ error: validated.error });
+    return;
+  }
+  const result = await saveStudentDataBundle(student.id, validated.value);
+  if (!result.ok) {
+    res.status(400).json({ error: result.error });
+    return;
+  }
+  const data = await getStudentDataBundle(student.id);
+  res.json(data);
 });
 
 studentsRouter.post("/", async (req, res) => {
