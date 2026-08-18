@@ -15,19 +15,6 @@ A Swedish-language web app for tracking students and generating a printable, dup
 - Database: SQLite via Prisma ORM
 - Sandbox: VS Code Dev Container (Docker)
 
-## Getting started
-
-1. Open this folder in VS Code with the [Dev Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) extension installed.
-2. Command Palette → **Dev Containers: Reopen in Container**. This builds the container, installs dependencies, and generates the Prisma client.
-3. In the container terminal, apply the committed migrations to create the local database:
-   ```
-   npm run prisma:migrate --workspace backend
-   ```
-4. Start both dev servers:
-   ```
-   npm run dev
-   ```
-5. Open the forwarded port `5173` in your browser.
 
 ## Persistence
 
@@ -37,3 +24,21 @@ The SQLite database lives at `data/studentracker.db`, inside the workspace bind 
 
 - `Student` (förnamn, efternamn, klass), `Assignment` (per course), `CourseSetting` (the nationella prov toggle) — see `backend/prisma/schema.prisma`.
 - The 5 courses and the nationella prov delprov per course are hardcoded (not stored in the database) in `backend/src/courses.ts`, duplicated in `frontend/src/courses.ts` for the UI. Changing the course list or delprov means editing both files, then adjusting `backend/src/pdf/StudentPdfDocument.tsx`'s page split (`PAGE_1_COURSES`/`PAGE_2_COURSES`) if needed, and re-verifying the PDF still lands on exactly 2 pages.
+
+## Deployment
+
+The root `Dockerfile` (not `.devcontainer/Dockerfile`, which is dev-only) builds a single production image: compiled backend + built static frontend, served together by one Express process on port 3000. On every push to `main`/`master`, `.github/workflows/docker-publish.yml` builds and publishes it to `ghcr.io/socawi-ai/elevdokumentation:latest` (also tagged with the commit SHA).
+
+**First time only**: after the first successful workflow run, the GitHub package defaults to private — go to the package's settings on GitHub and set visibility to however you want to pull it (public, or keep private and `docker login ghcr.io` with a PAT that has `read:packages` on your server).
+
+**Running it** — the database lives in `/app/data` inside the container; mount that as a volume so it survives image updates. Migrations run automatically on container start.
+
+```
+docker run -d \
+  --name elevdokumentation \
+  -p 3000:3000 \
+  -v elevdokumentation-data:/app/data \
+  ghcr.io/socawi-ai/elevdokumentation:latest
+```
+
+Put this behind whatever reverse proxy + auth (e.g. TinyAuth forward-auth) you're already running on the server — the app itself has no authentication, by design, so it must never be reachable directly from outside that proxy.
