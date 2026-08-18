@@ -1,0 +1,13 @@
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+    volumes:
+      - ..:/workspace:cached
+    command: sleep infinity
+    ports:
+      - "3000:3000"
+      - "5173:5173"
+    environment:
+      - DATABASE_URL=file:/workspace/data/studentracker.db
