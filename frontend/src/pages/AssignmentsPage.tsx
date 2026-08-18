@@ -1,16 +1,21 @@
 import { useEffect, useState } from "react";
-import { COURSES } from "../courses";
+import { COURSES, NATIONAL_TEST_COURSES } from "../courses";
 import { listAssignments, createAssignment, deleteAssignment, type Assignment } from "../api/assignments";
+import { listCourseSettings, setCourseSetting, type CourseSetting } from "../api/courseSettings";
 
 export default function AssignmentsPage() {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [courseSettings, setCourseSettings] = useState<CourseSetting[]>([]);
   const [loading, setLoading] = useState(true);
   const [newNames, setNewNames] = useState<Record<string, string>>({});
 
   function refresh() {
     setLoading(true);
-    listAssignments()
-      .then(setAssignments)
+    Promise.all([listAssignments(), listCourseSettings()])
+      .then(([a, c]) => {
+        setAssignments(a);
+        setCourseSettings(c);
+      })
       .finally(() => setLoading(false));
   }
 
@@ -29,6 +34,11 @@ export default function AssignmentsPage() {
     refresh();
   }
 
+  async function handleToggleNationalTest(course: string, checked: boolean) {
+    await setCourseSetting(course, checked);
+    refresh();
+  }
+
   if (loading) return <p>Laddar…</p>;
 
   return (
@@ -37,9 +47,23 @@ export default function AssignmentsPage() {
       <p>Hantera vilka uppgifter som listas för varje kurs på elevernas PDF-blad.</p>
       {COURSES.map((course) => {
         const courseAssignments = assignments.filter((a) => a.course === course);
+        const isNationalTestCourse = (NATIONAL_TEST_COURSES as readonly string[]).includes(course);
+        const showNationalTest = courseSettings.find((c) => c.course === course)?.showNationalTest ?? false;
         return (
           <section key={course}>
             <h2>{course}</h2>
+            {isNationalTestCourse && (
+              <p>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={showNationalTest}
+                    onChange={(e) => handleToggleNationalTest(course, e.target.checked)}
+                  />{" "}
+                  Visa nationella prov på PDF:en
+                </label>
+              </p>
+            )}
             {courseAssignments.length === 0 ? (
               <p>Inga uppgifter tillagda ännu.</p>
             ) : (

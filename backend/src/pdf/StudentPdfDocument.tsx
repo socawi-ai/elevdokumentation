@@ -1,6 +1,6 @@
 import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { Student, Assignment } from "@prisma/client";
-import { PAGE_1_COURSES, PAGE_2_COURSES, type CourseName } from "../courses.js";
+import { PAGE_1_COURSES, PAGE_2_COURSES, NATIONAL_TEST_DELPROV, type CourseName } from "../courses.js";
 
 const PAGE_MARGIN = 42.5; // 15mm
 // Safety buffer: the fixed-height constants below are hand-measured estimates
@@ -18,6 +18,8 @@ const COURSE_HEADING_HEIGHT = 26; // heading text + margins, per course section
 const ASSIGNMENT_ROW_HEIGHT = 16; // compact row holding 2 assignments side by side
 const GRADE_BOX_WIDTH = 30;
 const NOTES_LINE_HEIGHT = 16; // target spacing for handwritten-note ruled lines
+
+const NATIONAL_TEST_HEADING_HEIGHT = 14; // "Nationella prov" sub-heading + margins
 
 const ACCENT_COLOR = "#2F5D3A";
 
@@ -92,6 +94,45 @@ const styles = StyleSheet.create({
   notesLine: {
     borderBottomWidth: 0.75,
     borderBottomColor: "#999",
+  },
+  nationalTestBlock: {
+    marginTop: 4,
+  },
+  nationalTestHeading: {
+    fontSize: 10,
+    fontStyle: "italic",
+    color: ACCENT_COLOR,
+    marginBottom: 2,
+  },
+  nationalTestRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    height: ASSIGNMENT_ROW_HEIGHT,
+    borderLeftWidth: 2,
+    borderLeftColor: ACCENT_COLOR,
+    paddingLeft: 6,
+  },
+  summaryRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    height: ASSIGNMENT_ROW_HEIGHT,
+    borderLeftWidth: 2,
+    borderLeftColor: ACCENT_COLOR,
+    borderTopWidth: 0.75,
+    borderTopColor: "#000",
+    paddingLeft: 6,
+    marginTop: 2,
+  },
+  summaryLabel: {
+    flex: 1,
+    fontSize: 9,
+    fontWeight: 700,
+  },
+  summaryGradeBox: {
+    width: GRADE_BOX_WIDTH + 10,
+    height: ASSIGNMENT_ROW_HEIGHT - 4,
+    borderWidth: 1.5,
+    borderColor: "#000",
   },
   footer: {
     position: "absolute",
@@ -174,14 +215,34 @@ function Footer({ generatedOn }: { generatedOn: string }) {
   );
 }
 
+function NationalTestSection({ delprov }: { delprov: readonly string[] }) {
+  return (
+    <View style={styles.nationalTestBlock}>
+      <Text style={styles.nationalTestHeading}>Nationella prov</Text>
+      {delprov.map((name) => (
+        <View key={name} style={styles.nationalTestRow}>
+          <Text style={styles.assignmentName}>{name}</Text>
+          <View style={styles.gradeBox} />
+        </View>
+      ))}
+      <View style={styles.summaryRow}>
+        <Text style={styles.summaryLabel}>Sammanfattande betyg</Text>
+        <View style={styles.summaryGradeBox} />
+      </View>
+    </View>
+  );
+}
+
 function CourseSection({
   name,
   assignments,
   notesHeight,
+  nationalTestDelprov,
 }: {
   name: string;
   assignments: string[];
   notesHeight: number;
+  nationalTestDelprov?: readonly string[];
 }) {
   return (
     <View>
@@ -193,6 +254,7 @@ function CourseSection({
       ) : (
         chunkPairs(assignments).map((pair, i) => <AssignmentPairRow key={i} pair={pair} />)
       )}
+      {nationalTestDelprov && <NationalTestSection delprov={nationalTestDelprov} />}
       <RuledNotes height={notesHeight} />
     </View>
   );
@@ -201,18 +263,34 @@ function CourseSection({
 interface Props {
   student: Pick<Student, "firstName" | "lastName" | "group">;
   assignments: Pick<Assignment, "course" | "name">[];
+  courseSettings: Record<string, boolean>;
 }
 
-function StudentPages({ student, assignments }: Props) {
+function nationalTestExtraHeight(course: CourseName, courseSettings: Record<string, boolean>): number {
+  const delprov = NATIONAL_TEST_DELPROV[course];
+  if (!delprov || !courseSettings[course]) return 0;
+  return NATIONAL_TEST_HEADING_HEIGHT + (delprov.length + 1) * ASSIGNMENT_ROW_HEIGHT;
+}
+
+function StudentPages({ student, assignments, courseSettings }: Props) {
   const byCourse = groupByCourse(assignments);
 
-  const page1Courses = PAGE_1_COURSES.map((course: CourseName) => ({ name: course, items: byCourse.get(course) ?? [] }));
-  const page2Courses = PAGE_2_COURSES.map((course: CourseName) => ({ name: course, items: byCourse.get(course) ?? [] }));
+  function buildCourses(courseNames: readonly CourseName[]) {
+    return courseNames.map((course) => ({
+      name: course,
+      items: byCourse.get(course) ?? [],
+      extraHeight: nationalTestExtraHeight(course, courseSettings),
+      nationalTestDelprov: courseSettings[course] ? NATIONAL_TEST_DELPROV[course] : undefined,
+    }));
+  }
 
-  function notesPerCourse(courses: { items: string[] }[], fixedOverhead: number): number {
+  const page1Courses = buildCourses(PAGE_1_COURSES);
+  const page2Courses = buildCourses(PAGE_2_COURSES);
+
+  function notesPerCourse(courses: { items: string[]; extraHeight: number }[], fixedOverhead: number): number {
     const assignmentRowsTotal = courses.reduce((sum, c) => {
       const rowCount = c.items.length === 0 ? 1 : Math.ceil(c.items.length / 2);
-      return sum + rowCount * ASSIGNMENT_ROW_HEIGHT;
+      return sum + rowCount * ASSIGNMENT_ROW_HEIGHT + c.extraHeight;
     }, 0);
     const remaining = CONTENT_HEIGHT - fixedOverhead - assignmentRowsTotal;
     return Math.max(0, remaining / courses.length);
@@ -238,7 +316,13 @@ function StudentPages({ student, assignments }: Props) {
           <Text style={styles.studentLine}>Klass: {student.group}</Text>
         </View>
         {page1Courses.map((c) => (
-          <CourseSection key={c.name} name={c.name} assignments={c.items} notesHeight={page1NotesHeight} />
+          <CourseSection
+            key={c.name}
+            name={c.name}
+            assignments={c.items}
+            notesHeight={page1NotesHeight}
+            nationalTestDelprov={c.nationalTestDelprov}
+          />
         ))}
         <Footer generatedOn={generatedOn} />
       </Page>
@@ -247,7 +331,13 @@ function StudentPages({ student, assignments }: Props) {
           {student.firstName} {student.lastName} — {student.group}
         </Text>
         {page2Courses.map((c) => (
-          <CourseSection key={c.name} name={c.name} assignments={c.items} notesHeight={page2NotesHeight} />
+          <CourseSection
+            key={c.name}
+            name={c.name}
+            assignments={c.items}
+            notesHeight={page2NotesHeight}
+            nationalTestDelprov={c.nationalTestDelprov}
+          />
         ))}
         <Footer generatedOn={generatedOn} />
       </Page>
@@ -255,10 +345,10 @@ function StudentPages({ student, assignments }: Props) {
   );
 }
 
-export function StudentPdfDocument({ student, assignments }: Props) {
+export function StudentPdfDocument({ student, assignments, courseSettings }: Props) {
   return (
     <Document>
-      <StudentPages student={student} assignments={assignments} />
+      <StudentPages student={student} assignments={assignments} courseSettings={courseSettings} />
     </Document>
   );
 }
@@ -266,14 +356,16 @@ export function StudentPdfDocument({ student, assignments }: Props) {
 export function AllStudentsPdfDocument({
   students,
   assignments,
+  courseSettings,
 }: {
   students: Pick<Student, "id" | "firstName" | "lastName" | "group">[];
   assignments: Pick<Assignment, "course" | "name">[];
+  courseSettings: Record<string, boolean>;
 }) {
   return (
     <Document>
       {students.map((student) => (
-        <StudentPages key={student.id} student={student} assignments={assignments} />
+        <StudentPages key={student.id} student={student} assignments={assignments} courseSettings={courseSettings} />
       ))}
     </Document>
   );
