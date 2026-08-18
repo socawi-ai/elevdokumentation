@@ -5,6 +5,11 @@ import { StudentPdfDocument, AllStudentsPdfDocument } from "../pdf/StudentPdfDoc
 
 export const studentsRouter = Router();
 
+async function getCourseSettingsMap(): Promise<Record<string, boolean>> {
+  const rows = await prisma.courseSetting.findMany();
+  return Object.fromEntries(rows.map((r) => [r.course, r.showNationalTest]));
+}
+
 studentsRouter.get("/", async (_req, res) => {
   const students = await prisma.student.findMany({ orderBy: { lastName: "asc" } });
   res.json(students);
@@ -17,7 +22,10 @@ studentsRouter.get("/pdf/all", async (_req, res) => {
     return;
   }
   const assignments = await prisma.assignment.findMany({ orderBy: { createdAt: "asc" } });
-  const stream = await renderToStream(<AllStudentsPdfDocument students={students} assignments={assignments} />);
+  const courseSettings = await getCourseSettingsMap();
+  const stream = await renderToStream(
+    <AllStudentsPdfDocument students={students} assignments={assignments} courseSettings={courseSettings} />,
+  );
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `inline; filename="alla-elever.pdf"`);
   stream.pipe(res);
@@ -39,7 +47,10 @@ studentsRouter.get("/:id/pdf", async (req, res) => {
     return;
   }
   const assignments = await prisma.assignment.findMany({ orderBy: { createdAt: "asc" } });
-  const stream = await renderToStream(<StudentPdfDocument student={student} assignments={assignments} />);
+  const courseSettings = await getCourseSettingsMap();
+  const stream = await renderToStream(
+    <StudentPdfDocument student={student} assignments={assignments} courseSettings={courseSettings} />,
+  );
   const safeName = `${student.firstName}-${student.lastName}`.replace(/[^\w-]+/g, "_");
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `inline; filename="${safeName}.pdf"`);

@@ -22,3 +22,8 @@ model Assignment {
   name      String
   createdAt DateTime @default(now())
 }
+
+model CourseSetting {
+  course           String  @id
+  showNationalTest Boolean @default(false)
+}
