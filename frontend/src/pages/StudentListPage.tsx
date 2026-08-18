@@ -20,23 +20,24 @@ export default function StudentListPage() {
     refresh();
   }
 
-  if (loading) return <p>Loading…</p>;
+  if (loading) return <p>Laddar…</p>;
 
   return (
     <div>
-      <h1>Students</h1>
-      <p className="no-print">
-        <Link to="/students/new">+ New student</Link>
+      <h1>Elever</h1>
+      <p>
+        <Link to="/students/new">+ Ny elev</Link>
       </p>
       {students.length === 0 ? (
-        <p>No students yet.</p>
+        <p>Inga elever ännu.</p>
       ) : (
         <table>
           <thead>
             <tr>
-              <th>First name</th>
-              <th>Last name</th>
-              <th className="no-print">Actions</th>
+              <th>Förnamn</th>
+              <th>Efternamn</th>
+              <th>Klass</th>
+              <th>Åtgärder</th>
             </tr>
           </thead>
           <tbody>
@@ -44,10 +45,13 @@ export default function StudentListPage() {
               <tr key={s.id}>
                 <td>{s.firstName}</td>
                 <td>{s.lastName}</td>
-                <td className="no-print">
-                  <Link to={`/students/${s.id}/edit`}>Edit</Link>{" "}
-                  <Link to={`/students/${s.id}/print`}>Print</Link>{" "}
-                  <button onClick={() => handleDelete(s.id)}>Delete</button>
+                <td>{s.group}</td>
+                <td>
+                  <Link to={`/students/${s.id}/edit`}>Redigera</Link>{" "}
+                  <a href={`/api/students/${s.id}/pdf`} target="_blank" rel="noreferrer">
+                    Skriv ut (PDF)
+                  </a>{" "}
+                  <button onClick={() => handleDelete(s.id)}>Ta bort</button>
                 </td>
               </tr>
             ))}

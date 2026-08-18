@@ -2,13 +2,12 @@ export interface Student {
   id: string;
   firstName: string;
   lastName: string;
-  birthDate: string | null;
-  notes: string | null;
+  group: string;
   createdAt: string;
   updatedAt: string;
 }
 
-export type StudentInput = Pick<Student, "firstName" | "lastName" | "birthDate" | "notes">;
+export type StudentInput = Pick<Student, "firstName" | "lastName" | "group">;
 
 async function handle<T>(res: Response): Promise<T> {
   if (!res.ok) {
