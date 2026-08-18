@@ -14,6 +14,10 @@ model Student {
   group     String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  assignmentGrades   AssignmentGrade[]
+  nationalTestGrades NationalTestGrade[]
+  courseNotes        CourseNote[]
 }
 
 model Assignment {
@@ -21,9 +25,47 @@ model Assignment {
   course    String
   name      String
   createdAt DateTime @default(now())
+
+  grades AssignmentGrade[]
 }
 
 model CourseSetting {
   course           String  @id
   showNationalTest Boolean @default(false)
+}
+
+model AssignmentGrade {
+  id           String @id @default(cuid())
+  studentId    String
+  assignmentId String
+  grade        String
+
+  student    Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  assignment Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, assignmentId])
+}
+
+model NationalTestGrade {
+  id        String @id @default(cuid())
+  studentId String
+  course    String
+  delprov   String
+  grade     String
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, course, delprov])
+}
+
+model CourseNote {
+  id           String @id @default(cuid())
+  studentId    String
+  course       String
+  notes        String @default("")
+  summaryGrade String @default("")
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, course])
 }

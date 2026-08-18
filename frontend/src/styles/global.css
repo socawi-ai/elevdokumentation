@@ -386,6 +386,45 @@ tr.row-invalid {
   font-size: 0.88rem;
 }
 
+/* Digital grades & notes (student edit page) */
+
+.course-subheading {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--color-text-muted);
+  margin: 0.9rem 0 0.4rem;
+}
+
+.grade-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 0.5rem;
+}
+
+.grade-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.grade-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+input.grade-input {
+  width: 3.5rem;
+  flex: none;
+  text-align: center;
+  padding: 0.3rem;
+}
+
 .inline-form {
   display: flex;
   gap: 0.5rem;
