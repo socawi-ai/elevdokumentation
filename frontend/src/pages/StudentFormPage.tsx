@@ -134,7 +134,10 @@ export default function StudentFormPage() {
             {allStudents.map((s) => (
               <li key={s.id}>
                 <Link to={`/students/${s.id}/edit`} className={s.id === id ? "active" : undefined}>
-                  {s.firstName} {s.lastName}
+                  <span className="sidebar-name">
+                    {s.firstName} {s.lastName}
+                  </span>
+                  <span className="sidebar-group">{s.group}</span>
                 </Link>
               </li>
             ))}

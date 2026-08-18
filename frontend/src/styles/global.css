@@ -474,15 +474,27 @@ input.grade-input {
 }
 
 .sidebar-list a {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
   padding: 0.4rem 0.6rem;
   border-radius: var(--radius-sm);
   color: var(--color-text);
   text-decoration: none;
   font-size: 0.88rem;
+}
+
+.sidebar-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.sidebar-group {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
 }
 
 .sidebar-list a:hover {
