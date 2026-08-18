@@ -44,6 +44,32 @@ studentsRouter.post("/", async (req, res) => {
   res.status(201).json(student);
 });
 
+studentsRouter.post("/import", async (req, res) => {
+  const { students } = req.body;
+  if (!Array.isArray(students) || students.length === 0) {
+    res.status(400).json({ error: "Ingen data att importera" });
+    return;
+  }
+  const valid = students
+    .filter(
+      (s): s is { firstName: string; lastName: string; group: string } =>
+        typeof s?.firstName === "string" &&
+        s.firstName.trim() !== "" &&
+        typeof s?.lastName === "string" &&
+        s.lastName.trim() !== "" &&
+        typeof s?.group === "string" &&
+        s.group.trim() !== "",
+    )
+    .map((s) => ({ firstName: s.firstName.trim(), lastName: s.lastName.trim(), group: s.group.trim() }));
+
+  if (valid.length === 0) {
+    res.status(400).json({ error: "Ingen giltig data att importera" });
+    return;
+  }
+  const result = await prisma.student.createMany({ data: valid });
+  res.status(201).json({ count: result.count });
+});
+
 studentsRouter.put("/:id", async (req, res) => {
   const { firstName, lastName, group } = req.body;
   if (!firstName || !lastName || !group) {
