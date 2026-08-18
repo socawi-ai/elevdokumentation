@@ -106,27 +106,18 @@ const styles = StyleSheet.create({
   },
   nationalTestRow: {
     flexDirection: "row",
-    alignItems: "center",
     height: ASSIGNMENT_ROW_HEIGHT,
     borderLeftWidth: 2,
     borderLeftColor: ACCENT_COLOR,
+    borderBottomWidth: 0.5,
+    borderBottomColor: "#ddd",
     paddingLeft: 6,
-  },
-  summaryRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    height: ASSIGNMENT_ROW_HEIGHT,
-    borderLeftWidth: 2,
-    borderLeftColor: ACCENT_COLOR,
-    borderTopWidth: 0.75,
-    borderTopColor: "#000",
-    paddingLeft: 6,
-    marginTop: 2,
   },
   summaryLabel: {
     flex: 1,
     fontSize: 9,
     fontWeight: 700,
+    paddingRight: 6,
   },
   summaryGradeBox: {
     width: GRADE_BOX_WIDTH + 10,
@@ -215,20 +206,47 @@ function Footer({ generatedOn }: { generatedOn: string }) {
   );
 }
 
+type NationalTestCell = { kind: "delprov"; name: string } | { kind: "summary" };
+
+function NationalTestCellContent({ cell }: { cell: NationalTestCell }) {
+  if (cell.kind === "summary") {
+    return (
+      <>
+        <Text style={styles.summaryLabel}>Sammanfattande betyg</Text>
+        <View style={styles.summaryGradeBox} />
+      </>
+    );
+  }
+  return (
+    <>
+      <Text style={styles.assignmentName}>{cell.name}</Text>
+      <View style={styles.gradeBox} />
+    </>
+  );
+}
+
+function NationalTestPairRow({ pair }: { pair: [NationalTestCell, NationalTestCell | null] }) {
+  return (
+    <View style={styles.nationalTestRow}>
+      <View style={[styles.assignmentColumn, styles.assignmentColumnDivider]}>
+        <NationalTestCellContent cell={pair[0]} />
+      </View>
+      <View style={styles.assignmentColumn}>{pair[1] && <NationalTestCellContent cell={pair[1]} />}</View>
+    </View>
+  );
+}
+
 function NationalTestSection({ delprov }: { delprov: readonly string[] }) {
+  const cells: NationalTestCell[] = [
+    ...delprov.map((name): NationalTestCell => ({ kind: "delprov", name })),
+    { kind: "summary" },
+  ];
   return (
     <View style={styles.nationalTestBlock}>
       <Text style={styles.nationalTestHeading}>Nationella prov</Text>
-      {delprov.map((name) => (
-        <View key={name} style={styles.nationalTestRow}>
-          <Text style={styles.assignmentName}>{name}</Text>
-          <View style={styles.gradeBox} />
-        </View>
+      {chunkPairs(cells).map((pair, i) => (
+        <NationalTestPairRow key={i} pair={pair} />
       ))}
-      <View style={styles.summaryRow}>
-        <Text style={styles.summaryLabel}>Sammanfattande betyg</Text>
-        <View style={styles.summaryGradeBox} />
-      </View>
     </View>
   );
 }
@@ -269,7 +287,9 @@ interface Props {
 function nationalTestExtraHeight(course: CourseName, courseSettings: Record<string, boolean>): number {
   const delprov = NATIONAL_TEST_DELPROV[course];
   if (!delprov || !courseSettings[course]) return 0;
-  return NATIONAL_TEST_HEADING_HEIGHT + (delprov.length + 1) * ASSIGNMENT_ROW_HEIGHT;
+  // delprov + 1 synthetic "summary" cell, packed 2 per row like assignments
+  const rowCount = Math.ceil((delprov.length + 1) / 2);
+  return NATIONAL_TEST_HEADING_HEIGHT + rowCount * ASSIGNMENT_ROW_HEIGHT;
 }
 
 function StudentPages({ student, assignments, courseSettings }: Props) {
