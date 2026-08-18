@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type KeyboardEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { importStudents } from "../api/students";
 
@@ -16,7 +16,10 @@ function parsePastedText(text: string): ParsedRow[] {
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
 
-  const rows = lines.map((line) => line.split("\t").map((cell) => cell.trim()));
+  // Accepts a real tab (pasted from a spreadsheet, or typed via the Tab key
+  // in the textarea below), a comma, or two-or-more spaces as the column
+  // separator — so rows can also be typed by hand without a spreadsheet.
+  const rows = lines.map((line) => line.split(/\t|,\s*|\s{2,}/).map((cell) => cell.trim()));
 
   if (rows.length > 0) {
     const [c0, c1, c2] = rows[0].map((c) => c.toLowerCase());
@@ -43,6 +46,19 @@ export default function StudentImportPage() {
   const validRows = rows.filter((r) => r.valid);
   const invalidCount = rows.length - validRows.length;
 
+  function handleTextareaKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key !== "Tab") return;
+    e.preventDefault();
+    const el = e.currentTarget;
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const next = text.slice(0, start) + "\t" + text.slice(end);
+    setText(next);
+    requestAnimationFrame(() => {
+      el.selectionStart = el.selectionEnd = start + 1;
+    });
+  }
+
   async function handleImport() {
     setImporting(true);
     try {
@@ -58,13 +74,15 @@ export default function StudentImportPage() {
       <h1>Importera elever</h1>
       <p>
         Klistra in listan här — kopierad direkt från ett kalkylark med kolumnerna Förnamn, Efternamn, Klass (en elev
-        per rad).
+        per rad). Du kan även skriva för hand: tryck Tab för att hoppa till nästa kolumn, eller skriv kommatecken
+        eller flera mellanslag mellan kolumnerna.
       </p>
       <textarea
         rows={10}
         style={{ width: "100%", fontFamily: "monospace" }}
         value={text}
         onChange={(e) => setText(e.target.value)}
+        onKeyDown={handleTextareaKeyDown}
         placeholder={"Anna\tAndersson\tTE23A\nErik\tEriksson\tTE23A"}
       />
 
