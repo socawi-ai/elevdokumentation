@@ -1,4 +1,4 @@
-# StudentRacker
+# Elevdokumentation
 
 A web app for managing student records and generating printable forms.
 

@@ -1,5 +1,5 @@
 {
-  "name": "studentracker",
+  "name": "elevdokumentation",
   "dockerComposeFile": "docker-compose.yml",
   "service": "app",
   "workspaceFolder": "/workspace",

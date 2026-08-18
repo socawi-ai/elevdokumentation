@@ -8,7 +8,7 @@ export default function App() {
   return (
     <div>
       <header>
-        <Link to="/">StudentRacker</Link> <Link to="/uppgifter">Uppgifter</Link>
+        <Link to="/">Elevdokumentation</Link> <Link to="/uppgifter">Uppgifter</Link>
       </header>
       <main>
         <Routes>
