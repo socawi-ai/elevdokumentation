@@ -203,7 +203,7 @@ interface Props {
   assignments: Pick<Assignment, "course" | "name">[];
 }
 
-export function StudentPdfDocument({ student, assignments }: Props) {
+function StudentPages({ student, assignments }: Props) {
   const byCourse = groupByCourse(assignments);
 
   const page1Courses = PAGE_1_COURSES.map((course: CourseName) => ({ name: course, items: byCourse.get(course) ?? [] }));
@@ -227,7 +227,7 @@ export function StudentPdfDocument({ student, assignments }: Props) {
   const generatedOn = new Date().toISOString().slice(0, 10);
 
   return (
-    <Document>
+    <>
       <Page size="A4" style={styles.page}>
         <Text style={styles.title}>Kursuppföljning</Text>
         <View style={styles.titleRule} />
@@ -251,6 +251,30 @@ export function StudentPdfDocument({ student, assignments }: Props) {
         ))}
         <Footer generatedOn={generatedOn} />
       </Page>
+    </>
+  );
+}
+
+export function StudentPdfDocument({ student, assignments }: Props) {
+  return (
+    <Document>
+      <StudentPages student={student} assignments={assignments} />
+    </Document>
+  );
+}
+
+export function AllStudentsPdfDocument({
+  students,
+  assignments,
+}: {
+  students: Pick<Student, "id" | "firstName" | "lastName" | "group">[];
+  assignments: Pick<Assignment, "course" | "name">[];
+}) {
+  return (
+    <Document>
+      {students.map((student) => (
+        <StudentPages key={student.id} student={student} assignments={assignments} />
+      ))}
     </Document>
   );
 }

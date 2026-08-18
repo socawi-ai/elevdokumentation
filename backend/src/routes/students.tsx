@@ -1,13 +1,26 @@
 import { Router } from "express";
 import { renderToStream } from "@react-pdf/renderer";
 import { prisma } from "../db.js";
-import { StudentPdfDocument } from "../pdf/StudentPdfDocument.js";
+import { StudentPdfDocument, AllStudentsPdfDocument } from "../pdf/StudentPdfDocument.js";
 
 export const studentsRouter = Router();
 
 studentsRouter.get("/", async (_req, res) => {
   const students = await prisma.student.findMany({ orderBy: { lastName: "asc" } });
   res.json(students);
+});
+
+studentsRouter.get("/pdf/all", async (_req, res) => {
+  const students = await prisma.student.findMany({ orderBy: { lastName: "asc" } });
+  if (students.length === 0) {
+    res.status(400).json({ error: "Inga elever att skriva ut" });
+    return;
+  }
+  const assignments = await prisma.assignment.findMany({ orderBy: { createdAt: "asc" } });
+  const stream = await renderToStream(<AllStudentsPdfDocument students={students} assignments={assignments} />);
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `inline; filename="alla-elever.pdf"`);
+  stream.pipe(res);
 });
 
 studentsRouter.get("/:id", async (req, res) => {
