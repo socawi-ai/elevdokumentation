@@ -44,3 +44,11 @@ export function updateStudent(id: string, data: StudentInput): Promise<Student> 
 export function deleteStudent(id: string): Promise<void> {
   return fetch(`/api/students/${id}`, { method: "DELETE" }).then((res) => handle(res));
 }
+
+export function importStudents(students: StudentInput[]): Promise<{ count: number }> {
+  return fetch("/api/students/import", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ students }),
+  }).then((res) => handle(res));
+}

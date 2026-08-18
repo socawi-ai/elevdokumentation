@@ -26,7 +26,7 @@ export default function StudentListPage() {
     <div>
       <h1>Elever</h1>
       <p>
-        <Link to="/students/new">+ Ny elev</Link>
+        <Link to="/students/new">+ Ny elev</Link> <Link to="/students/import">Importera elever</Link>
       </p>
       {students.length === 0 ? (
         <p>Inga elever ännu.</p>
