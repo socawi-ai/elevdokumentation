@@ -3,17 +3,21 @@ import type { Student, Assignment } from "@prisma/client";
 import { PAGE_1_COURSES, PAGE_2_COURSES, type CourseName } from "../courses.js";
 
 const PAGE_MARGIN = 42.5; // 15mm
-const CONTENT_HEIGHT = 841.89 - PAGE_MARGIN * 2;
+// Safety buffer: the fixed-height constants below are hand-measured estimates
+// of react-pdf's actual rendered heights, not exact — reserving slack here
+// absorbs that per-element drift so it can never accumulate into an overflow
+// (which would silently spill a blank extra page).
+const SAFETY_MARGIN = 40;
+const CONTENT_HEIGHT = 841.89 - PAGE_MARGIN * 2 - SAFETY_MARGIN;
 
 const TITLE_HEIGHT = 39;
 const STUDENT_BLOCK_HEIGHT = 52;
 const SMALL_HEADER_HEIGHT = 27;
-const COURSE_HEADING_HEIGHT = 30; // heading text + margins, per course section
+const COURSE_HEADING_HEIGHT = 26; // heading text + margins, per course section
 
-const MIN_ROW_HEIGHT = 14;
-const MAX_ROW_HEIGHT = 34;
-const MIN_GRADE_BOX = 12;
-const MAX_GRADE_BOX = 22;
+const ASSIGNMENT_ROW_HEIGHT = 14; // compact: assignment name + small grade box
+const GRADE_BOX_SIZE = 11;
+const NOTES_LINE_HEIGHT = 16; // target spacing for handwritten-note ruled lines
 
 const styles = StyleSheet.create({
   page: {
@@ -41,23 +45,34 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: 700,
     marginTop: 8,
-    marginBottom: 6,
+    marginBottom: 4,
   },
-  row: {
+  assignmentRow: {
     flexDirection: "row",
     alignItems: "center",
-    borderBottomWidth: 0.75,
-    borderBottomColor: "#ccc",
+    height: ASSIGNMENT_ROW_HEIGHT,
+    borderBottomWidth: 0.5,
+    borderBottomColor: "#ddd",
   },
   assignmentName: {
     flex: 1,
-    fontSize: 11,
-    paddingRight: 8,
+    fontSize: 9,
+    paddingRight: 6,
+  },
+  gradeBox: {
+    width: GRADE_BOX_SIZE,
+    height: GRADE_BOX_SIZE,
+    borderWidth: 1,
+    borderColor: "#000",
   },
   emptyText: {
     flex: 1,
-    fontSize: 10,
+    fontSize: 9,
     color: "#888",
+  },
+  notesLine: {
+    borderBottomWidth: 0.75,
+    borderBottomColor: "#999",
   },
 });
 
@@ -70,19 +85,24 @@ function groupByCourse(assignments: Pick<Assignment, "course" | "name">[]): Map<
   return map;
 }
 
-function computeRowHeight(fixedHeight: number, totalSlots: number): number {
-  if (totalSlots === 0) return MAX_ROW_HEIGHT;
-  const available = CONTENT_HEIGHT - fixedHeight;
-  const raw = available / totalSlots;
-  return Math.max(MIN_ROW_HEIGHT, Math.min(MAX_ROW_HEIGHT, raw));
+function AssignmentRow({ name }: { name: string }) {
+  return (
+    <View style={styles.assignmentRow}>
+      <Text style={styles.assignmentName}>{name}</Text>
+      <View style={styles.gradeBox} />
+    </View>
+  );
 }
 
-function AssignmentRow({ name, rowHeight }: { name: string; rowHeight: number }) {
-  const boxSize = Math.max(MIN_GRADE_BOX, Math.min(MAX_GRADE_BOX, rowHeight - 10));
+function RuledNotes({ height }: { height: number }) {
+  if (height <= 0) return null;
+  const count = Math.max(1, Math.floor(height / NOTES_LINE_HEIGHT));
+  const lineHeight = height / count;
   return (
-    <View style={[styles.row, { height: rowHeight }]}>
-      <Text style={styles.assignmentName}>{name}</Text>
-      <View style={{ width: boxSize, height: boxSize, borderWidth: 1.2, borderColor: "#000" }} />
+    <View>
+      {Array.from({ length: count }).map((_, i) => (
+        <View key={i} style={[styles.notesLine, { height: lineHeight }]} />
+      ))}
     </View>
   );
 }
@@ -90,22 +110,23 @@ function AssignmentRow({ name, rowHeight }: { name: string; rowHeight: number })
 function CourseSection({
   name,
   assignments,
-  rowHeight,
+  notesHeight,
 }: {
   name: string;
   assignments: string[];
-  rowHeight: number;
+  notesHeight: number;
 }) {
   return (
     <View>
       <Text style={styles.courseHeading}>{name}</Text>
       {assignments.length === 0 ? (
-        <View style={[styles.row, { height: rowHeight }]}>
+        <View style={styles.assignmentRow}>
           <Text style={styles.emptyText}>Inga uppgifter tillagda</Text>
         </View>
       ) : (
-        assignments.map((a, i) => <AssignmentRow key={i} name={a} rowHeight={rowHeight} />)
+        assignments.map((a, i) => <AssignmentRow key={i} name={a} />)
       )}
+      <RuledNotes height={notesHeight} />
     </View>
   );
 }
@@ -121,14 +142,17 @@ export function StudentPdfDocument({ student, assignments }: Props) {
   const page1Courses = PAGE_1_COURSES.map((course: CourseName) => ({ name: course, items: byCourse.get(course) ?? [] }));
   const page2Courses = PAGE_2_COURSES.map((course: CourseName) => ({ name: course, items: byCourse.get(course) ?? [] }));
 
-  const page1Slots = page1Courses.reduce((sum, c) => sum + Math.max(c.items.length, 1), 0);
-  const page2Slots = page2Courses.reduce((sum, c) => sum + Math.max(c.items.length, 1), 0);
+  function notesPerCourse(courses: { items: string[] }[], fixedOverhead: number): number {
+    const assignmentRowsTotal = courses.reduce((sum, c) => sum + Math.max(c.items.length, 1) * ASSIGNMENT_ROW_HEIGHT, 0);
+    const remaining = CONTENT_HEIGHT - fixedOverhead - assignmentRowsTotal;
+    return Math.max(0, remaining / courses.length);
+  }
 
   const page1Fixed = TITLE_HEIGHT + STUDENT_BLOCK_HEIGHT + page1Courses.length * COURSE_HEADING_HEIGHT;
   const page2Fixed = SMALL_HEADER_HEIGHT + page2Courses.length * COURSE_HEADING_HEIGHT;
 
-  const page1RowHeight = computeRowHeight(page1Fixed, page1Slots);
-  const page2RowHeight = computeRowHeight(page2Fixed, page2Slots);
+  const page1NotesHeight = notesPerCourse(page1Courses, page1Fixed);
+  const page2NotesHeight = notesPerCourse(page2Courses, page2Fixed);
 
   return (
     <Document>
@@ -141,7 +165,7 @@ export function StudentPdfDocument({ student, assignments }: Props) {
           <Text style={styles.studentLine}>Klass: {student.group}</Text>
         </View>
         {page1Courses.map((c) => (
-          <CourseSection key={c.name} name={c.name} assignments={c.items} rowHeight={page1RowHeight} />
+          <CourseSection key={c.name} name={c.name} assignments={c.items} notesHeight={page1NotesHeight} />
         ))}
       </Page>
       <Page size="A4" style={styles.page}>
@@ -149,7 +173,7 @@ export function StudentPdfDocument({ student, assignments }: Props) {
           {student.firstName} {student.lastName} — {student.group}
         </Text>
         {page2Courses.map((c) => (
-          <CourseSection key={c.name} name={c.name} assignments={c.items} rowHeight={page2RowHeight} />
+          <CourseSection key={c.name} name={c.name} assignments={c.items} notesHeight={page2NotesHeight} />
         ))}
       </Page>
     </Document>
