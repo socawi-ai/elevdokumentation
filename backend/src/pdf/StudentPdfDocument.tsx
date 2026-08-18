@@ -15,8 +15,8 @@ const STUDENT_BLOCK_HEIGHT = 52;
 const SMALL_HEADER_HEIGHT = 27;
 const COURSE_HEADING_HEIGHT = 26; // heading text + margins, per course section
 
-const ASSIGNMENT_ROW_HEIGHT = 14; // compact: assignment name + small grade box
-const GRADE_BOX_SIZE = 11;
+const ASSIGNMENT_ROW_HEIGHT = 16; // compact row holding 2 assignments side by side
+const GRADE_BOX_WIDTH = 30;
 const NOTES_LINE_HEIGHT = 16; // target spacing for handwritten-note ruled lines
 
 const styles = StyleSheet.create({
@@ -49,10 +49,20 @@ const styles = StyleSheet.create({
   },
   assignmentRow: {
     flexDirection: "row",
-    alignItems: "center",
     height: ASSIGNMENT_ROW_HEIGHT,
     borderBottomWidth: 0.5,
     borderBottomColor: "#ddd",
+  },
+  assignmentColumn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  assignmentColumnDivider: {
+    paddingRight: 10,
+    marginRight: 10,
+    borderRightWidth: 0.5,
+    borderRightColor: "#ddd",
   },
   assignmentName: {
     flex: 1,
@@ -60,8 +70,8 @@ const styles = StyleSheet.create({
     paddingRight: 6,
   },
   gradeBox: {
-    width: GRADE_BOX_SIZE,
-    height: GRADE_BOX_SIZE,
+    width: GRADE_BOX_WIDTH,
+    height: ASSIGNMENT_ROW_HEIGHT - 4,
     borderWidth: 1,
     borderColor: "#000",
   },
@@ -85,11 +95,35 @@ function groupByCourse(assignments: Pick<Assignment, "course" | "name">[]): Map<
   return map;
 }
 
-function AssignmentRow({ name }: { name: string }) {
+function chunkPairs<T>(items: T[]): [T, T | null][] {
+  const pairs: [T, T | null][] = [];
+  for (let i = 0; i < items.length; i += 2) {
+    pairs.push([items[i], items[i + 1] ?? null]);
+  }
+  return pairs;
+}
+
+function AssignmentColumn({ name }: { name: string | null }) {
+  return (
+    <View style={styles.assignmentColumn}>
+      {name !== null && (
+        <>
+          <Text style={styles.assignmentName}>{name}</Text>
+          <View style={styles.gradeBox} />
+        </>
+      )}
+    </View>
+  );
+}
+
+function AssignmentPairRow({ pair }: { pair: [string, string | null] }) {
   return (
     <View style={styles.assignmentRow}>
-      <Text style={styles.assignmentName}>{name}</Text>
-      <View style={styles.gradeBox} />
+      <View style={[styles.assignmentColumn, styles.assignmentColumnDivider]}>
+        <Text style={styles.assignmentName}>{pair[0]}</Text>
+        <View style={styles.gradeBox} />
+      </View>
+      <AssignmentColumn name={pair[1]} />
     </View>
   );
 }
@@ -124,7 +158,7 @@ function CourseSection({
           <Text style={styles.emptyText}>Inga uppgifter tillagda</Text>
         </View>
       ) : (
-        assignments.map((a, i) => <AssignmentRow key={i} name={a} />)
+        chunkPairs(assignments).map((pair, i) => <AssignmentPairRow key={i} pair={pair} />)
       )}
       <RuledNotes height={notesHeight} />
     </View>
@@ -143,7 +177,10 @@ export function StudentPdfDocument({ student, assignments }: Props) {
   const page2Courses = PAGE_2_COURSES.map((course: CourseName) => ({ name: course, items: byCourse.get(course) ?? [] }));
 
   function notesPerCourse(courses: { items: string[] }[], fixedOverhead: number): number {
-    const assignmentRowsTotal = courses.reduce((sum, c) => sum + Math.max(c.items.length, 1) * ASSIGNMENT_ROW_HEIGHT, 0);
+    const assignmentRowsTotal = courses.reduce((sum, c) => {
+      const rowCount = c.items.length === 0 ? 1 : Math.ceil(c.items.length / 2);
+      return sum + rowCount * ASSIGNMENT_ROW_HEIGHT;
+    }, 0);
     const remaining = CONTENT_HEIGHT - fixedOverhead - assignmentRowsTotal;
     return Math.max(0, remaining / courses.length);
   }
