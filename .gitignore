@@ -1,0 +1,16 @@
+node_modules/
+dist/
+build/
+
+# runtime SQLite database (persisted via bind mount, not committed)
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+
+.env
+*.local
+
+.DS_Store
+
+.claude/

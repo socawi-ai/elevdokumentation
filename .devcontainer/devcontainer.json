@@ -1,0 +1,24 @@
+{
+  "name": "studentracker",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspace",
+  "shutdownAction": "stopCompose",
+  "forwardPorts": [3000, 5173],
+  "portsAttributes": {
+    "3000": { "label": "Backend API", "onAutoForward": "notify" },
+    "5173": { "label": "Frontend (Vite)", "onAutoForward": "openPreview" }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "Prisma.prisma",
+        "eamodio.gitlens"
+      ]
+    }
+  },
+  "postCreateCommand": "npm install && npm run prisma:generate",
+  "remoteUser": "node"
+}
