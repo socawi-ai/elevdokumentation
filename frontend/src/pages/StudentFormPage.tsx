@@ -29,39 +29,38 @@ export default function StudentFormPage() {
   return (
     <div>
       <h1>{isEdit ? "Redigera elev" : "Ny elev"}</h1>
-      <form onSubmit={handleSubmit}>
-        <div>
-          <label>
-            Förnamn
-            <input
-              value={form.firstName}
-              onChange={(e) => setForm({ ...form, firstName: e.target.value })}
-              required
-            />
-          </label>
+      <form className="form-card" onSubmit={handleSubmit}>
+        <div className="field">
+          <label htmlFor="firstName">Förnamn</label>
+          <input
+            id="firstName"
+            value={form.firstName}
+            onChange={(e) => setForm({ ...form, firstName: e.target.value })}
+            required
+          />
         </div>
-        <div>
-          <label>
-            Efternamn
-            <input
-              value={form.lastName}
-              onChange={(e) => setForm({ ...form, lastName: e.target.value })}
-              required
-            />
-          </label>
+        <div className="field">
+          <label htmlFor="lastName">Efternamn</label>
+          <input
+            id="lastName"
+            value={form.lastName}
+            onChange={(e) => setForm({ ...form, lastName: e.target.value })}
+            required
+          />
         </div>
-        <div>
-          <label>
-            Klass
-            <input
-              value={form.group}
-              onChange={(e) => setForm({ ...form, group: e.target.value })}
-              placeholder="t.ex. TE23A"
-              required
-            />
-          </label>
+        <div className="field">
+          <label htmlFor="group">Klass</label>
+          <input
+            id="group"
+            value={form.group}
+            onChange={(e) => setForm({ ...form, group: e.target.value })}
+            placeholder="t.ex. TE23A"
+            required
+          />
         </div>
-        <button type="submit">{isEdit ? "Spara" : "Skapa"}</button>
+        <button className="btn btn-primary" type="submit">
+          {isEdit ? "Spara" : "Skapa"}
+        </button>
       </form>
     </div>
   );

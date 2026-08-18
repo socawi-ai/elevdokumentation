@@ -72,14 +72,14 @@ export default function StudentImportPage() {
   return (
     <div>
       <h1>Importera elever</h1>
-      <p>
+      <p className="hint">
         Klistra in listan här — kopierad direkt från ett kalkylark med kolumnerna Förnamn, Efternamn, Klass (en elev
         per rad). Du kan även skriva för hand: tryck Tab för att hoppa till nästa kolumn, eller skriv kommatecken
         eller flera mellanslag mellan kolumnerna.
       </p>
       <textarea
         rows={10}
-        style={{ width: "100%", fontFamily: "monospace" }}
+        style={{ width: "100%" }}
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={handleTextareaKeyDown}
@@ -88,35 +88,43 @@ export default function StudentImportPage() {
 
       {rows.length > 0 && (
         <>
-          <p>
+          <p className="hint" style={{ marginTop: "1rem" }}>
             {validRows.length} giltiga rader
             {invalidCount > 0 && <> — {invalidCount} ogiltiga rader hoppas över</>}
           </p>
-          <table>
-            <thead>
-              <tr>
-                <th>Förnamn</th>
-                <th>Efternamn</th>
-                <th>Klass</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, i) => (
-                <tr key={i} style={{ background: row.valid ? undefined : "#fdd" }}>
-                  <td>{row.firstName}</td>
-                  <td>{row.lastName}</td>
-                  <td>{row.group}</td>
-                  <td>{row.valid ? "OK" : row.error}</td>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Förnamn</th>
+                  <th>Efternamn</th>
+                  <th>Klass</th>
+                  <th>Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {rows.map((row, i) => (
+                  <tr key={i} className={row.valid ? undefined : "row-invalid"}>
+                    <td>{row.firstName}</td>
+                    <td>{row.lastName}</td>
+                    <td>{row.group}</td>
+                    <td>
+                      {row.valid ? (
+                        <span className="badge badge-ok">OK</span>
+                      ) : (
+                        <span className="badge badge-error">{row.error}</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
 
-      <p>
-        <button onClick={handleImport} disabled={validRows.length === 0 || importing}>
+      <p style={{ marginTop: "1.25rem" }}>
+        <button className="btn btn-primary" onClick={handleImport} disabled={validRows.length === 0 || importing}>
           {importing ? "Importerar…" : `Importera ${validRows.length} elever`}
         </button>
       </p>
