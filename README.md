@@ -27,10 +27,6 @@ The SQLite database lives at `data/studentracker.db`, inside the workspace bind 
 
 ## Deployment
 
-The root `Dockerfile` (not `.devcontainer/Dockerfile`, which is dev-only) builds a single production image: compiled backend + built static frontend, served together by one Express process on port 3000. On every push to `main`/`master`, `.github/workflows/docker-publish.yml` builds and publishes it to `ghcr.io/socawi-ai/elevdokumentation:latest` (also tagged with the commit SHA).
-
-Verified: since this repo is public, the published package is pullable with no authentication at all — `docker pull ghcr.io/socawi-ai/elevdokumentation:latest` just works on a fresh machine. If the repo is ever made private, the package would need `docker login ghcr.io` on the server with a PAT that has `read:packages`.
-
 **Running it** — the root `docker-compose.yml` runs the published image (not a local build — that's what `.devcontainer/docker-compose.yml` is for). The database is bind-mounted at `./data` next to the compose file (same pattern as local dev) — easy to find and back up, and survives image updates; migrations run automatically on container start.
 
 ```
