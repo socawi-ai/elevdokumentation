@@ -29,6 +29,7 @@ export default function App() {
           <Route path="/uppgifter" element={<AssignmentsPage />} />
         </Routes>
       </main>
+      <footer className="app-footer">v0.2</footer>
     </div>
   );
 }
