@@ -12,6 +12,27 @@ async function getCourseSettingsMap(): Promise<Record<string, boolean>> {
   return Object.fromEntries(rows.map((r) => [r.course, r.showNationalTest]));
 }
 
+function normalizeKey(firstName: string, lastName: string, group: string): string {
+  return `${firstName.trim().toLowerCase()}|${lastName.trim().toLowerCase()}|${group.trim().toLowerCase()}`;
+}
+
+// SQLite doesn't support Prisma's case-insensitive `mode` filter, so duplicate
+// detection just fetches everyone and compares in JS — fine at class-list
+// scale (tens to low hundreds of students), consistent with how the rest of
+// this app avoids pagination/indexing machinery it doesn't need yet.
+async function findDuplicateStudent(
+  firstName: string,
+  lastName: string,
+  group: string,
+  excludeId?: string,
+): Promise<boolean> {
+  const key = normalizeKey(firstName, lastName, group);
+  const students = await prisma.student.findMany(excludeId ? { where: { id: { not: excludeId } } } : undefined);
+  return students.some((s) => normalizeKey(s.firstName, s.lastName, s.group) === key);
+}
+
+const DUPLICATE_ERROR = "En elev med det namnet finns redan i den klassen";
+
 studentsRouter.get(
   "/",
   asyncHandler(async (_req, res) => {
@@ -164,6 +185,10 @@ studentsRouter.post(
       res.status(400).json({ error: "Förnamn, efternamn och klass krävs" });
       return;
     }
+    if (await findDuplicateStudent(firstName, lastName, group)) {
+      res.status(409).json({ error: DUPLICATE_ERROR });
+      return;
+    }
     const student = await prisma.student.create({
       data: { firstName, lastName, group },
     });
@@ -199,8 +224,27 @@ studentsRouter.post(
       res.status(400).json({ error: "Ingen giltig data att importera" });
       return;
     }
-    const result = await prisma.student.createMany({ data: valid });
-    res.status(201).json({ count: result.count });
+
+    const existing = await prisma.student.findMany();
+    const seenKeys = new Set(existing.map((s) => normalizeKey(s.firstName, s.lastName, s.group)));
+    const toCreate: typeof valid = [];
+    let duplicates = 0;
+    for (const s of valid) {
+      const key = normalizeKey(s.firstName, s.lastName, s.group);
+      if (seenKeys.has(key)) {
+        duplicates++;
+        continue;
+      }
+      seenKeys.add(key);
+      toCreate.push(s);
+    }
+
+    if (toCreate.length === 0) {
+      res.status(400).json({ error: "Alla rader var redan tillagda elever" });
+      return;
+    }
+    const result = await prisma.student.createMany({ data: toCreate });
+    res.status(201).json({ count: result.count, duplicates });
   }),
 );
 
@@ -214,6 +258,10 @@ studentsRouter.put(
     }
     if (!firstName.trim() || !lastName.trim() || !group.trim()) {
       res.status(400).json({ error: "Förnamn, efternamn och klass krävs" });
+      return;
+    }
+    if (await findDuplicateStudent(firstName, lastName, group, req.params.id)) {
+      res.status(409).json({ error: DUPLICATE_ERROR });
       return;
     }
     try {

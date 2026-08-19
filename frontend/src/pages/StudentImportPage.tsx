@@ -1,13 +1,19 @@
-import { useMemo, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { importStudents } from "../api/students";
+import { importStudents, listStudents, type Student } from "../api/students";
+
+type RowStatus = "ok" | "invalid" | "duplicate";
 
 interface ParsedRow {
   firstName: string;
   lastName: string;
   group: string;
-  valid: boolean;
-  error?: string;
+  status: RowStatus;
+  message?: string;
+}
+
+function normalizeKey(firstName: string, lastName: string, group: string): string {
+  return `${firstName.trim().toLowerCase()}|${lastName.trim().toLowerCase()}|${group.trim().toLowerCase()}`;
 }
 
 function parsePastedText(text: string): ParsedRow[] {
@@ -28,23 +34,43 @@ function parsePastedText(text: string): ParsedRow[] {
     }
   }
 
-  return rows.map((cols) => {
+  return rows.map((cols): ParsedRow => {
     const [firstName = "", lastName = "", group = ""] = cols;
     if (!firstName || !lastName || !group) {
-      return { firstName, lastName, group, valid: false, error: "Saknar förnamn, efternamn eller klass" };
+      return { firstName, lastName, group, status: "invalid", message: "Saknar förnamn, efternamn eller klass" };
     }
-    return { firstName, lastName, group, valid: true };
+    return { firstName, lastName, group, status: "ok" };
+  });
+}
+
+function markDuplicates(rows: ParsedRow[], existing: Student[]): ParsedRow[] {
+  const existingKeys = new Set(existing.map((s) => normalizeKey(s.firstName, s.lastName, s.group)));
+  const seen = new Set<string>();
+  return rows.map((row) => {
+    if (row.status !== "ok") return row;
+    const key = normalizeKey(row.firstName, row.lastName, row.group);
+    if (existingKeys.has(key) || seen.has(key)) {
+      return { ...row, status: "duplicate", message: "Eleven finns redan" };
+    }
+    seen.add(key);
+    return row;
   });
 }
 
 export default function StudentImportPage() {
   const [text, setText] = useState("");
   const [importing, setImporting] = useState(false);
+  const [existingStudents, setExistingStudents] = useState<Student[]>([]);
   const navigate = useNavigate();
 
-  const rows = useMemo(() => parsePastedText(text), [text]);
-  const validRows = rows.filter((r) => r.valid);
-  const invalidCount = rows.length - validRows.length;
+  useEffect(() => {
+    listStudents().then(setExistingStudents);
+  }, []);
+
+  const rows = useMemo(() => markDuplicates(parsePastedText(text), existingStudents), [text, existingStudents]);
+  const validRows = rows.filter((r) => r.status === "ok");
+  const invalidCount = rows.filter((r) => r.status === "invalid").length;
+  const duplicateCount = rows.filter((r) => r.status === "duplicate").length;
 
   function handleTextareaKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key !== "Tab") return;
@@ -75,7 +101,8 @@ export default function StudentImportPage() {
       <p className="hint">
         Klistra in listan här — kopierad direkt från ett kalkylark med kolumnerna Förnamn, Efternamn, Klass (en elev
         per rad). Du kan även skriva för hand: tryck Tab för att hoppa till nästa kolumn, eller skriv kommatecken
-        eller flera mellanslag mellan kolumnerna.
+        eller flera mellanslag mellan kolumnerna. Elever som redan finns (samma namn och klass) markeras som
+        dubbletter och hoppas över automatiskt.
       </p>
       <textarea
         rows={10}
@@ -91,6 +118,7 @@ export default function StudentImportPage() {
           <p className="hint" style={{ marginTop: "1rem" }}>
             {validRows.length} giltiga rader
             {invalidCount > 0 && <> — {invalidCount} ogiltiga rader hoppas över</>}
+            {duplicateCount > 0 && <> — {duplicateCount} dubbletter hoppas över</>}
           </p>
           <div className="table-wrap">
             <table>
@@ -104,16 +132,17 @@ export default function StudentImportPage() {
               </thead>
               <tbody>
                 {rows.map((row, i) => (
-                  <tr key={i} className={row.valid ? undefined : "row-invalid"}>
+                  <tr
+                    key={i}
+                    className={row.status === "invalid" ? "row-invalid" : row.status === "duplicate" ? "row-duplicate" : undefined}
+                  >
                     <td>{row.firstName}</td>
                     <td>{row.lastName}</td>
                     <td>{row.group}</td>
                     <td>
-                      {row.valid ? (
-                        <span className="badge badge-ok">OK</span>
-                      ) : (
-                        <span className="badge badge-error">{row.error}</span>
-                      )}
+                      {row.status === "ok" && <span className="badge badge-ok">OK</span>}
+                      {row.status === "invalid" && <span className="badge badge-error">{row.message}</span>}
+                      {row.status === "duplicate" && <span className="badge badge-warning">{row.message}</span>}
                     </td>
                   </tr>
                 ))}

@@ -45,7 +45,7 @@ export function deleteStudent(id: string): Promise<void> {
   return fetch(`/api/students/${id}`, { method: "DELETE" }).then((res) => handle(res));
 }
 
-export function importStudents(students: StudentInput[]): Promise<{ count: number }> {
+export function importStudents(students: StudentInput[]): Promise<{ count: number; duplicates: number }> {
   return fetch("/api/students/import", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
