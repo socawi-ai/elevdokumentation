@@ -480,6 +480,11 @@ input.grade-input {
   padding: 0.3rem;
 }
 
+select.grade-input {
+  flex: none;
+  padding: 0.3rem;
+}
+
 .inline-form {
   display: flex;
   gap: 0.5rem;
