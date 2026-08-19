@@ -7,16 +7,61 @@
   --color-accent: #2f5d3a;
   --color-accent-hover: #244830;
   --color-accent-soft: #e7f0e9;
+  --color-accent-contrast: #ffffff;
   --color-danger: #b3261e;
   --color-danger-soft: #fbeceb;
   --color-warning: #8a5a00;
   --color-warning-soft: #fdf1db;
+  --color-hover: #fafbfa;
   --radius-sm: 6px;
   --radius-md: 12px;
   --shadow-sm: 0 1px 2px rgba(20, 30, 22, 0.06);
   --shadow-md: 0 6px 20px rgba(20, 30, 22, 0.08);
   --font-sans:
     system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-bg: #131713;
+    --color-surface: #1b201c;
+    --color-border: #2e352f;
+    --color-text: #e8ece8;
+    --color-text-muted: #96a396;
+    --color-accent: #7bc98d;
+    --color-accent-hover: #93d6a2;
+    --color-accent-soft: #1e2c20;
+    --color-accent-contrast: #0d130e;
+    --color-danger: #f0847c;
+    --color-danger-soft: #3a201d;
+    --color-warning: #e8b563;
+    --color-warning-soft: #3a2e17;
+    --color-hover: #20251f;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+    --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.6);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --color-bg: #131713;
+  --color-surface: #1b201c;
+  --color-border: #2e352f;
+  --color-text: #e8ece8;
+  --color-text-muted: #96a396;
+  --color-accent: #7bc98d;
+  --color-accent-hover: #93d6a2;
+  --color-accent-soft: #1e2c20;
+  --color-accent-contrast: #0d130e;
+  --color-danger: #f0847c;
+  --color-danger-soft: #3a201d;
+  --color-warning: #e8b563;
+  --color-warning-soft: #3a2e17;
+  --color-hover: #20251f;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.6);
+  color-scheme: dark;
 }
 
 * {
@@ -153,13 +198,13 @@ a {
 .btn-primary {
   background: var(--color-accent);
   border-color: var(--color-accent);
-  color: #fff;
+  color: var(--color-accent-contrast);
 }
 
 .btn-primary:hover {
   background: var(--color-accent-hover);
   border-color: var(--color-accent-hover);
-  color: #fff;
+  color: var(--color-accent-contrast);
 }
 
 .btn-danger {
@@ -306,7 +351,7 @@ tbody tr {
 }
 
 tbody tr:hover {
-  background: #fafbfa;
+  background: var(--color-hover);
 }
 
 th input[type="checkbox"],
