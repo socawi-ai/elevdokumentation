@@ -1,10 +1,11 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { createStudent, getStudent, listStudents, updateStudent, type Student, type StudentInput } from "../api/students";
 import { listAssignments, type Assignment } from "../api/assignments";
 import { listCourseSettings, type CourseSetting } from "../api/courseSettings";
 import { getStudentData, saveStudentData, type StudentDataBundle } from "../api/studentData";
 import { COURSES, NATIONAL_TEST_DELPROV } from "../courses";
+import { ASSIGNMENT_GRADE_OPTIONS } from "../grades";
 
 const emptyForm: StudentInput = { firstName: "", lastName: "", group: "" };
 
@@ -56,6 +57,8 @@ export default function StudentFormPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [allStudents, setAllStudents] = useState<Student[]>([]);
+  const [autosaveStatus, setAutosaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const justLoadedRef = useRef(false);
 
   useEffect(() => {
     listStudents().then(setAllStudents);
@@ -66,16 +69,33 @@ export default function StudentFormPage() {
     setDataLoaded(false);
     setForm(emptyForm);
     setDataForm(emptyDataBundle());
+    setAutosaveStatus("idle");
     Promise.all([getStudent(id), listAssignments(), listCourseSettings(), getStudentData(id)]).then(
       ([student, assignmentList, courseSettingList, sparseData]) => {
         setForm({ firstName: student.firstName, lastName: student.lastName, group: student.group });
         setAssignments(assignmentList);
         setCourseSettings(courseSettingList);
+        justLoadedRef.current = true;
         setDataForm(overlayData(buildDefaultData(assignmentList), sparseData));
         setDataLoaded(true);
       },
     );
   }, [id]);
+
+  useEffect(() => {
+    if (!isEdit || !dataLoaded || !id) return;
+    if (justLoadedRef.current) {
+      justLoadedRef.current = false;
+      return;
+    }
+    setAutosaveStatus("saving");
+    const timer = setTimeout(() => {
+      saveStudentData(id, dataForm)
+        .then(() => setAutosaveStatus("saved"))
+        .catch(() => setAutosaveStatus("error"));
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [dataForm, isEdit, dataLoaded, id]);
 
   function setAssignmentGrade(assignmentId: string, grade: string) {
     setDataForm((prev) => ({ ...prev, assignmentGrades: { ...prev.assignmentGrades, [assignmentId]: grade } }));
@@ -213,9 +233,18 @@ export default function StudentFormPage() {
 
             {isEdit && dataLoaded && (
               <>
-                <h2 style={{ marginTop: "2rem" }}>Digital dokumentation</h2>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginTop: "2rem" }}>
+                  <h2 style={{ margin: 0 }}>Digital dokumentation</h2>
+                  {autosaveStatus === "saving" && <span className="hint">Sparar…</span>}
+                  {autosaveStatus === "saved" && <span className="hint">Sparat</span>}
+                  {autosaveStatus === "error" && (
+                    <span className="hint" style={{ color: "var(--color-danger)" }}>
+                      Kunde inte spara
+                    </span>
+                  )}
+                </div>
                 <p className="hint" style={{ marginBottom: "1rem" }}>
-                  Fylls i här, visas ifyllt på elevens PDF istället för tomma rutor/rader.
+                  Fylls i här, visas ifyllt på elevens PDF istället för tomma rutor/rader. Sparas automatiskt.
                 </p>
                 <div className="course-grid">
                   {COURSES.map((course) => {
@@ -237,12 +266,18 @@ export default function StudentFormPage() {
                             {courseAssignments.map((a) => (
                               <div className="grade-row" key={a.id}>
                                 <span>{a.name}</span>
-                                <input
+                                <select
                                   className="grade-input"
-                                  maxLength={4}
                                   value={dataForm.assignmentGrades[a.id] ?? ""}
                                   onChange={(e) => setAssignmentGrade(a.id, e.target.value)}
-                                />
+                                >
+                                  <option value="">–</option>
+                                  {ASSIGNMENT_GRADE_OPTIONS.map((g) => (
+                                    <option key={g} value={g}>
+                                      {g}
+                                    </option>
+                                  ))}
+                                </select>
                               </div>
                             ))}
                           </div>

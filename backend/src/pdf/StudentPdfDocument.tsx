@@ -247,13 +247,26 @@ function GradeBox({ grade, wide }: { grade: string; wide?: boolean }) {
   );
 }
 
+// The per-assignment box is a fixed 30pt wide (styles.gradeBox) — plenty for a
+// single letter grade, but "Inte närvarande"/"Deltagit" (the two non-letter
+// options in the assignment grade dropdown) would silently clip under the
+// box's overflow:hidden. Abbreviate just those two for this box only.
+const ASSIGNMENT_GRADE_BOX_LABELS: Record<string, string> = {
+  "Inte närvarande": "Frv",
+  Deltagit: "Delt",
+};
+
+function assignmentGradeLabel(grade: string): string {
+  return ASSIGNMENT_GRADE_BOX_LABELS[grade] ?? grade;
+}
+
 function AssignmentColumn({ item }: { item: AssignmentItem | null }) {
   return (
     <View style={styles.assignmentColumn}>
       {item !== null && (
         <>
           <Text style={styles.assignmentName}>{item.name}</Text>
-          <GradeBox grade={item.grade} />
+          <GradeBox grade={assignmentGradeLabel(item.grade)} />
         </>
       )}
     </View>
@@ -265,7 +278,7 @@ function AssignmentPairRow({ pair }: { pair: [AssignmentItem, AssignmentItem | n
     <View style={styles.assignmentRow}>
       <View style={[styles.assignmentColumn, styles.assignmentColumnDivider]}>
         <Text style={styles.assignmentName}>{pair[0].name}</Text>
-        <GradeBox grade={pair[0].grade} />
+        <GradeBox grade={assignmentGradeLabel(pair[0].grade)} />
       </View>
       <AssignmentColumn item={pair[1]} />
     </View>
