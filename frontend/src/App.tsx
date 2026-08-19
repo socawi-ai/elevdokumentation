@@ -3,6 +3,7 @@ import StudentListPage from "./pages/StudentListPage";
 import StudentFormPage from "./pages/StudentFormPage";
 import StudentImportPage from "./pages/StudentImportPage";
 import AssignmentsPage from "./pages/AssignmentsPage";
+import StatsPage from "./pages/StatsPage";
 
 export default function App() {
   return (
@@ -18,6 +19,9 @@ export default function App() {
           <NavLink to="/uppgifter" className={({ isActive }) => (isActive ? "active" : undefined)}>
             Uppgifter
           </NavLink>
+          <NavLink to="/statistik" className={({ isActive }) => (isActive ? "active" : undefined)}>
+            Statistik
+          </NavLink>
         </nav>
       </header>
       <main className="container">
@@ -27,6 +31,7 @@ export default function App() {
           <Route path="/students/import" element={<StudentImportPage />} />
           <Route path="/students/:id/edit" element={<StudentFormPage />} />
           <Route path="/uppgifter" element={<AssignmentsPage />} />
+          <Route path="/statistik" element={<StatsPage />} />
         </Routes>
       </main>
       <footer className="app-footer">v0.2</footer>
