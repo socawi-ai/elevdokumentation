@@ -1,9 +1,42 @@
+import { useEffect, useState } from "react";
 import { Routes, Route, NavLink } from "react-router-dom";
 import StudentListPage from "./pages/StudentListPage";
 import StudentFormPage from "./pages/StudentFormPage";
 import StudentImportPage from "./pages/StudentImportPage";
 import AssignmentsPage from "./pages/AssignmentsPage";
 import StatsPage from "./pages/StatsPage";
+import { getEffectiveTheme, getStoredTheme, setTheme, type Theme } from "./theme";
+
+function ThemeToggle() {
+  const [theme, setThemeState] = useState<Theme>(getEffectiveTheme);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    function handleSystemChange() {
+      if (!getStoredTheme()) setThemeState(getEffectiveTheme());
+    }
+    mq.addEventListener("change", handleSystemChange);
+    return () => mq.removeEventListener("change", handleSystemChange);
+  }, []);
+
+  function toggle() {
+    const next: Theme = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    setThemeState(next);
+  }
+
+  return (
+    <button
+      type="button"
+      className="btn btn-sm"
+      onClick={toggle}
+      aria-label={theme === "dark" ? "Byt till ljust läge" : "Byt till mörkt läge"}
+      title={theme === "dark" ? "Byt till ljust läge" : "Byt till mörkt läge"}
+    >
+      {theme === "dark" ? "☀️" : "🌙"}
+    </button>
+  );
+}
 
 export default function App() {
   return (
@@ -22,6 +55,7 @@ export default function App() {
           <NavLink to="/statistik" className={({ isActive }) => (isActive ? "active" : undefined)}>
             Statistik
           </NavLink>
+          <ThemeToggle />
         </nav>
       </header>
       <main className="container">
@@ -34,7 +68,7 @@ export default function App() {
           <Route path="/statistik" element={<StatsPage />} />
         </Routes>
       </main>
-      <footer className="app-footer">v0.2</footer>
+      <footer className="app-footer">v0.3</footer>
     </div>
   );
 }
