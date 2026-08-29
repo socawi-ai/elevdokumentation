@@ -14,6 +14,13 @@ import {
 type SortField = "firstName" | "lastName" | "group";
 type SortDirection = "asc" | "desc";
 
+// Klass codes follow a "<program><startyear>" convention (e.g. "SA25", "EK25"),
+// so the trailing digits are the intake year shared across parallel programs.
+function extractYear(group: string): string | null {
+  const match = group.match(/(\d+)$/);
+  return match ? match[1] : null;
+}
+
 export default function StudentListPage() {
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
@@ -22,6 +29,7 @@ export default function StudentListPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
   const [groupFilter, setGroupFilter] = useState("");
+  const [yearFilter, setYearFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
   const [rowError, setRowError] = useState("");
   const [bulkGroup, setBulkGroup] = useState("");
@@ -46,10 +54,18 @@ export default function StudentListPage() {
     return [...new Set(students.map((s) => s.group))].sort(collator.compare);
   }, [students]);
 
+  const years = useMemo(() => {
+    const collator = new Intl.Collator("sv");
+    return [...new Set(students.map((s) => extractYear(s.group)).filter((y): y is string => y !== null))].sort(
+      collator.compare,
+    );
+  }, [students]);
+
   const filteredStudents = useMemo(() => {
     const q = search.trim().toLowerCase();
     return students.filter((s) => {
       if (groupFilter && s.group !== groupFilter) return false;
+      if (yearFilter && extractYear(s.group) !== yearFilter) return false;
       if (!q) return true;
       return (
         s.firstName.toLowerCase().includes(q) ||
@@ -57,7 +73,7 @@ export default function StudentListPage() {
         `${s.firstName} ${s.lastName}`.toLowerCase().includes(q)
       );
     });
-  }, [students, search, groupFilter]);
+  }, [students, search, groupFilter, yearFilter]);
 
   const sortedStudents = useMemo(() => {
     const collator = new Intl.Collator("sv");
@@ -65,11 +81,13 @@ export default function StudentListPage() {
     return sortDirection === "asc" ? sorted : sorted.reverse();
   }, [filteredStudents, sortField, sortDirection]);
 
-  const filtersActive = search.trim() !== "" || groupFilter !== "" || statusFilter !== "active";
+  const filtersActive =
+    search.trim() !== "" || groupFilter !== "" || yearFilter !== "" || statusFilter !== "active";
 
   function clearFilters() {
     setSearch("");
     setGroupFilter("");
+    setYearFilter("");
     setStatusFilter("active");
   }
 
@@ -229,6 +247,14 @@ export default function StudentListPage() {
           {groups.map((g) => (
             <option key={g} value={g}>
               {g}
+            </option>
+          ))}
+        </select>
+        <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)}>
+          <option value="">Alla årskullar</option>
+          {years.map((y) => (
+            <option key={y} value={y}>
+              {y}
             </option>
           ))}
         </select>
