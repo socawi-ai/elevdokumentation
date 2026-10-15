@@ -617,6 +617,106 @@ select.grade-input {
   min-width: 0;
 }
 
+/* Courses page */
+
+.course-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.course-card-header h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.renameable-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.assignment-list li .renameable-text {
+  flex: 1 1 auto;
+  min-width: 3rem;
+}
+
+.assignment-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 0.15rem;
+}
+
+.btn-ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--color-text-muted);
+}
+
+.toggle-row select {
+  padding: 0.25rem 0.4rem;
+  font-size: 0.85rem;
+}
+
+.checkbox-matrix th:not(:first-child),
+.checkbox-matrix td:not(:first-child) {
+  text-align: center;
+}
+
+/* Grade grid */
+
+.grade-grid td,
+.grade-grid th {
+  padding: 0.35rem 0.5rem;
+}
+
+.grade-grid th {
+  text-transform: none;
+  letter-spacing: 0;
+  vertical-align: bottom;
+}
+
+.grade-grid-col-label {
+  max-width: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.grade-grid-missing {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--color-warning);
+}
+
+.grade-grid-complete {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
+select.grade-cell,
+input.grade-cell {
+  width: 4.5rem;
+  padding: 0.3rem;
+  text-align: center;
+}
+
+.grade-cell.cell-missing {
+  background: var(--color-warning-soft);
+}
+
+kbd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8em;
+  padding: 0.05rem 0.3rem;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-surface);
+}
+
 /* Responsive */
 
 @media (max-width: 640px) {

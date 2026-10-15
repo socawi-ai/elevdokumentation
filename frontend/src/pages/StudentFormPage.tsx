@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { createStudent, getStudent, listStudents, updateStudent, type Student, type StudentInput } from "../api/students";
 import { listAssignments, type Assignment } from "../api/assignments";
-import { listCourseSettings, type CourseSetting } from "../api/courseSettings";
 import { getStudentData, saveStudentData, type StudentDataBundle } from "../api/studentData";
-import { COURSES, NATIONAL_TEST_DELPROV } from "../courses";
+import { errorMessage } from "../api/http";
+import type { Course } from "../api/courses";
+import { useCourses } from "../coursesContext";
+import { applyFilters, filtersQuery, readFilters } from "../studentFilters";
 import { ASSIGNMENT_GRADE_OPTIONS } from "../grades";
 
 const emptyForm: StudentInput = { firstName: "", lastName: "", group: "" };
@@ -13,28 +15,39 @@ function emptyDataBundle(): StudentDataBundle {
   return { assignmentGrades: {}, nationalTestGrades: {}, courseNotes: {} };
 }
 
-function buildDefaultData(assignments: Assignment[]): StudentDataBundle {
+function buildDefaultData(assignments: Assignment[], courses: Course[]): StudentDataBundle {
+  const courseNames = new Set(courses.map((c) => c.name));
   const assignmentGrades: Record<string, string> = {};
-  for (const a of assignments) assignmentGrades[a.id] = "";
+  for (const a of assignments) if (courseNames.has(a.course)) assignmentGrades[a.id] = "";
 
   const nationalTestGrades: Record<string, Record<string, string>> = {};
-  for (const [course, delprov] of Object.entries(NATIONAL_TEST_DELPROV)) {
-    nationalTestGrades[course] = {};
-    for (const d of delprov ?? []) nationalTestGrades[course][d] = "";
+  for (const course of courses) {
+    if (course.nationalTestDelprov.length === 0) continue;
+    nationalTestGrades[course.name] = {};
+    for (const d of course.nationalTestDelprov) nationalTestGrades[course.name][d] = "";
   }
 
   const courseNotes: Record<string, { notes: string; summaryGrade: string }> = {};
-  for (const course of COURSES) courseNotes[course] = { notes: "", summaryGrade: "" };
+  for (const course of courses) courseNotes[course.name] = { notes: "", summaryGrade: "" };
 
   return { assignmentGrades, nationalTestGrades, courseNotes };
 }
 
+// Overlays the stored (sparse) data onto the defaults, keeping only keys that
+// belong to the student's current courses — so a save never touches data for
+// courses the form doesn't show.
 function overlayData(defaults: StudentDataBundle, sparse: StudentDataBundle): StudentDataBundle {
-  const assignmentGrades = { ...defaults.assignmentGrades, ...sparse.assignmentGrades };
+  const assignmentGrades: Record<string, string> = {};
+  for (const id of Object.keys(defaults.assignmentGrades)) {
+    assignmentGrades[id] = sparse.assignmentGrades[id] ?? "";
+  }
 
   const nationalTestGrades: Record<string, Record<string, string>> = {};
   for (const course of Object.keys(defaults.nationalTestGrades)) {
-    nationalTestGrades[course] = { ...defaults.nationalTestGrades[course], ...(sparse.nationalTestGrades[course] ?? {}) };
+    nationalTestGrades[course] = {};
+    for (const d of Object.keys(defaults.nationalTestGrades[course])) {
+      nationalTestGrades[course][d] = sparse.nationalTestGrades[course]?.[d] ?? "";
+    }
   }
 
   const courseNotes: Record<string, { notes: string; summaryGrade: string }> = {};
@@ -45,57 +58,94 @@ function overlayData(defaults: StudentDataBundle, sparse: StudentDataBundle): St
   return { assignmentGrades, nationalTestGrades, courseNotes };
 }
 
+interface PendingSave {
+  studentId: string;
+  data: StudentDataBundle;
+}
+
 export default function StudentFormPage() {
   const { id } = useParams();
   const isEdit = Boolean(id);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const filters = useMemo(() => readFilters(searchParams), [searchParams]);
+  const listQuery = filtersQuery(filters);
+  const { coursesForGroup, loading: coursesLoading } = useCourses();
+
   const [form, setForm] = useState<StudentInput>(emptyForm);
+  const [studentGroup, setStudentGroup] = useState("");
   const [assignments, setAssignments] = useState<Assignment[]>([]);
-  const [courseSettings, setCourseSettings] = useState<CourseSetting[]>([]);
   const [dataForm, setDataForm] = useState<StudentDataBundle>(emptyDataBundle());
-  const [dataLoaded, setDataLoaded] = useState(false);
+  // Which student `dataForm` belongs to. Autosave only runs while this matches
+  // the route's id, so a render that happens between "id changed" and "new
+  // student loaded" can never save the previous student's data to the new id.
+  const [dataOwnerId, setDataOwnerId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [allStudents, setAllStudents] = useState<Student[]>([]);
   const [autosaveStatus, setAutosaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const justLoadedRef = useRef(false);
+  const pendingSaveRef = useRef<PendingSave | null>(null);
+  const currentIdRef = useRef(id);
+  currentIdRef.current = id;
+
+  const dataLoaded = isEdit && dataOwnerId === id;
 
   useEffect(() => {
-    listStudents().then(setAllStudents);
+    listStudents(filters.status).then(setAllStudents);
+  }, [filters.status]);
+
+  const flushPendingSave = useCallback(() => {
+    const pending = pendingSaveRef.current;
+    if (!pending) return;
+    pendingSaveRef.current = null;
+    const isCurrent = () => currentIdRef.current === pending.studentId;
+    saveStudentData(pending.studentId, pending.data)
+      .then(() => isCurrent() && setAutosaveStatus("saved"))
+      .catch(() => {
+        if (isCurrent()) setAutosaveStatus("error");
+        else window.alert("Kunde inte spara ändringarna för föregående elev. Gå tillbaka och kontrollera.");
+      });
   }, []);
 
-  useEffect(() => {
-    if (!id) return;
-    setDataLoaded(false);
-    setForm(emptyForm);
-    setDataForm(emptyDataBundle());
-    setAutosaveStatus("idle");
-    Promise.all([getStudent(id), listAssignments(), listCourseSettings(), getStudentData(id)]).then(
-      ([student, assignmentList, courseSettingList, sparseData]) => {
-        setForm({ firstName: student.firstName, lastName: student.lastName, group: student.group });
-        setAssignments(assignmentList);
-        setCourseSettings(courseSettingList);
-        justLoadedRef.current = true;
-        setDataForm(overlayData(buildDefaultData(assignmentList), sparseData));
-        setDataLoaded(true);
-      },
-    );
-  }, [id]);
+  // Leaving the student (prev/next, sidebar, another page) saves any edit
+  // still waiting on the debounce timer instead of dropping it.
+  useEffect(() => () => flushPendingSave(), [id, flushPendingSave]);
 
   useEffect(() => {
-    if (!isEdit || !dataLoaded || !id) return;
+    if (!id || coursesLoading) return;
+    let cancelled = false;
+    setDataOwnerId(null);
+    setError(null);
+    setAutosaveStatus("idle");
+    Promise.all([getStudent(id), listAssignments(), getStudentData(id)])
+      .then(([student, assignmentList, sparseData]) => {
+        // A slower response for a student we've already navigated away from.
+        if (cancelled) return;
+        setForm({ firstName: student.firstName, lastName: student.lastName, group: student.group });
+        setStudentGroup(student.group);
+        setAssignments(assignmentList);
+        justLoadedRef.current = true;
+        setDataForm(overlayData(buildDefaultData(assignmentList, coursesForGroup(student.group)), sparseData));
+        setDataOwnerId(id);
+      })
+      .catch((err) => !cancelled && setError(errorMessage(err)));
+    return () => {
+      cancelled = true;
+    };
+  }, [id, coursesLoading, coursesForGroup]);
+
+  useEffect(() => {
+    if (!dataLoaded || !id) return;
     if (justLoadedRef.current) {
       justLoadedRef.current = false;
       return;
     }
     setAutosaveStatus("saving");
-    const timer = setTimeout(() => {
-      saveStudentData(id, dataForm)
-        .then(() => setAutosaveStatus("saved"))
-        .catch(() => setAutosaveStatus("error"));
-    }, 600);
+    pendingSaveRef.current = { studentId: id, data: dataForm };
+    const timer = setTimeout(flushPendingSave, 600);
     return () => clearTimeout(timer);
-  }, [dataForm, isEdit, dataLoaded, id]);
+  }, [dataForm, dataLoaded, id, flushPendingSave]);
 
   function setAssignmentGrade(assignmentId: string, grade: string) {
     setDataForm((prev) => ({ ...prev, assignmentGrades: { ...prev.assignmentGrades, [assignmentId]: grade } }));
@@ -127,33 +177,42 @@ export default function StudentFormPage() {
     setSaving(true);
     try {
       if (isEdit && id) {
+        // This save supersedes any pending autosave.
+        pendingSaveRef.current = null;
         await updateStudent(id, form);
         await saveStudentData(id, dataForm);
       } else {
         await createStudent(form);
       }
-      navigate("/");
+      navigate(`/${listQuery}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Något gick fel, försök igen.");
+      setError(errorMessage(err));
     } finally {
       setSaving(false);
     }
   }
 
-  const currentIndex = allStudents.findIndex((s) => s.id === id);
-  const prevStudent = currentIndex > 0 ? allStudents[currentIndex - 1] : null;
+  const visibleStudents = useMemo(() => applyFilters(allStudents, filters), [allStudents, filters]);
+  const currentIndex = visibleStudents.findIndex((s) => s.id === id);
+  const prevStudent = currentIndex > 0 ? visibleStudents[currentIndex - 1] : null;
   const nextStudent =
-    currentIndex >= 0 && currentIndex < allStudents.length - 1 ? allStudents[currentIndex + 1] : null;
+    currentIndex >= 0 && currentIndex < visibleStudents.length - 1 ? visibleStudents[currentIndex + 1] : null;
+  const studentCourses = isEdit ? coursesForGroup(studentGroup) : [];
+  const filterLabel = [filters.klass, filters.year && `årskull ${filters.year}`, filters.q && `"${filters.q}"`]
+    .filter(Boolean)
+    .join(", ");
 
   return (
     <div className="edit-layout">
-      {allStudents.length > 0 && (
+      {visibleStudents.length > 0 && (
         <aside className="student-sidebar">
-          <div className="sidebar-heading">Elever</div>
+          <div className="sidebar-heading">
+            Elever{filterLabel && ` · ${filterLabel}`} ({visibleStudents.length})
+          </div>
           <ul className="sidebar-list">
-            {allStudents.map((s) => (
+            {visibleStudents.map((s) => (
               <li key={s.id}>
-                <Link to={`/students/${s.id}/edit`} className={s.id === id ? "active" : undefined}>
+                <Link to={`/students/${s.id}/edit${listQuery}`} className={s.id === id ? "active" : undefined}>
                   <span className="sidebar-name">
                     {s.firstName} {s.lastName}
                   </span>
@@ -166,6 +225,9 @@ export default function StudentFormPage() {
       )}
 
       <div className="edit-main">
+        <p style={{ margin: "0 0 0.5rem" }}>
+          <Link to={`/${listQuery}`}>← Tillbaka till listan</Link>
+        </p>
         <div className="page-header">
           <h1>{isEdit ? "Redigera elev" : "Ny elev"}</h1>
           {isEdit && (
@@ -174,15 +236,20 @@ export default function StudentFormPage() {
                 type="button"
                 className="btn btn-sm"
                 disabled={!prevStudent}
-                onClick={() => prevStudent && navigate(`/students/${prevStudent.id}/edit`)}
+                onClick={() => prevStudent && navigate(`/students/${prevStudent.id}/edit${listQuery}`)}
               >
                 ← Föregående
               </button>
+              {currentIndex >= 0 && (
+                <span className="hint" style={{ alignSelf: "center" }}>
+                  {currentIndex + 1} / {visibleStudents.length}
+                </span>
+              )}
               <button
                 type="button"
                 className="btn btn-sm"
                 disabled={!nextStudent}
-                onClick={() => nextStudent && navigate(`/students/${nextStudent.id}/edit`)}
+                onClick={() => nextStudent && navigate(`/students/${nextStudent.id}/edit${listQuery}`)}
               >
                 Nästa →
               </button>
@@ -197,7 +264,7 @@ export default function StudentFormPage() {
         )}
 
         {isEdit && !dataLoaded ? (
-          <p className="loading-state">Laddar…</p>
+          !error && <p className="loading-state">Laddar…</p>
         ) : (
           <form onSubmit={handleSubmit}>
             <div className="form-card">
@@ -231,7 +298,7 @@ export default function StudentFormPage() {
               </div>
             </div>
 
-            {isEdit && dataLoaded && (
+            {dataLoaded && (
               <>
                 <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginTop: "2rem" }}>
                   <h2 style={{ margin: 0 }}>Digital dokumentation</h2>
@@ -244,19 +311,18 @@ export default function StudentFormPage() {
                   )}
                 </div>
                 <p className="hint" style={{ marginBottom: "1rem" }}>
-                  Fylls i här, visas ifyllt på elevens PDF istället för tomma rutor/rader. Sparas automatiskt.
+                  Fylls i här, visas ifyllt på elevens PDF istället för tomma rutor/rader. Sparas automatiskt. Visar
+                  kurserna som klass {studentGroup} läser.
                 </p>
                 <div className="course-grid">
-                  {COURSES.map((course) => {
-                    const courseAssignments = assignments.filter((a) => a.course === course);
-                    const delprov = NATIONAL_TEST_DELPROV[course];
-                    const showNationalTest =
-                      courseSettings.find((c) => c.course === course)?.showNationalTest ?? false;
-                    const notes = dataForm.courseNotes[course]?.notes ?? "";
+                  {studentCourses.map((course) => {
+                    const courseAssignments = assignments.filter((a) => a.course === course.name);
+                    const delprov = course.nationalTestDelprov;
+                    const notes = dataForm.courseNotes[course.name]?.notes ?? "";
 
                     return (
-                      <div className="course-card" key={course}>
-                        <h2>{course}</h2>
+                      <div className="course-card" key={course.name}>
+                        <h2>{course.name}</h2>
 
                         <div className="course-subheading">Uppgifter</div>
                         {courseAssignments.length === 0 ? (
@@ -283,7 +349,7 @@ export default function StudentFormPage() {
                           </div>
                         )}
 
-                        {delprov && showNationalTest && (
+                        {delprov.length > 0 && course.showNationalTest && (
                           <>
                             <div className="course-subheading">Nationella prov</div>
                             <div className="grade-list">
@@ -293,8 +359,8 @@ export default function StudentFormPage() {
                                   <input
                                     className="grade-input"
                                     maxLength={4}
-                                    value={dataForm.nationalTestGrades[course]?.[d] ?? ""}
-                                    onChange={(e) => setDelprovGrade(course, d, e.target.value)}
+                                    value={dataForm.nationalTestGrades[course.name]?.[d] ?? ""}
+                                    onChange={(e) => setDelprovGrade(course.name, d, e.target.value)}
                                   />
                                 </div>
                               ))}
@@ -303,8 +369,8 @@ export default function StudentFormPage() {
                                 <input
                                   className="grade-input"
                                   maxLength={4}
-                                  value={dataForm.courseNotes[course]?.summaryGrade ?? ""}
-                                  onChange={(e) => setCourseNoteField(course, "summaryGrade", e.target.value)}
+                                  value={dataForm.courseNotes[course.name]?.summaryGrade ?? ""}
+                                  onChange={(e) => setCourseNoteField(course.name, "summaryGrade", e.target.value)}
                                 />
                               </div>
                             </div>
@@ -316,7 +382,7 @@ export default function StudentFormPage() {
                           rows={4}
                           style={{ width: "100%" }}
                           value={notes}
-                          onChange={(e) => setCourseNoteField(course, "notes", e.target.value)}
+                          onChange={(e) => setCourseNoteField(course.name, "notes", e.target.value)}
                         />
                       </div>
                     );

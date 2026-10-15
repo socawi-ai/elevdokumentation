@@ -1,6 +1,6 @@
 import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { Student, Assignment } from "@prisma/client";
-import { PAGE_1_COURSES, PAGE_2_COURSES, NATIONAL_TEST_DELPROV, type CourseName } from "../courses.js";
+import type { CourseConfig } from "../courses.js";
 import type { StudentDataBundle } from "../studentData.js";
 
 const PAGE_MARGIN = 42.5; // 15mm
@@ -406,23 +406,29 @@ function CourseSection({
 interface Props {
   student: Pick<Student, "firstName" | "lastName" | "group">;
   assignments: Pick<Assignment, "id" | "course" | "name">[];
-  courseSettings: Record<string, boolean>;
+  // The courses this student's klass takes, in display order.
+  courses: CourseConfig[];
   data: StudentDataBundle;
 }
 
-function nationalTestExtraHeight(course: CourseName, courseSettings: Record<string, boolean>): number {
-  const delprov = NATIONAL_TEST_DELPROV[course];
-  if (!delprov || !courseSettings[course]) return 0;
+function shownDelprov(course: CourseConfig): string[] | undefined {
+  return course.showNationalTest && course.nationalTestDelprov.length > 0 ? course.nationalTestDelprov : undefined;
+}
+
+function nationalTestExtraHeight(course: CourseConfig): number {
+  const delprov = shownDelprov(course);
+  if (!delprov) return 0;
   // delprov + 1 synthetic "summary" cell, packed 2 per row like assignments
   const rowCount = Math.ceil((delprov.length + 1) / 2);
   return NATIONAL_TEST_HEADING_HEIGHT + rowCount * ASSIGNMENT_ROW_HEIGHT;
 }
 
-function StudentPages({ student, assignments, courseSettings, data }: Props) {
+function StudentPages({ student, assignments, courses, data }: Props) {
   const byCourse = groupByCourse(assignments);
 
-  function buildCourses(courseNames: readonly CourseName[]) {
-    return courseNames.map((course) => {
+  function buildCourses(pageCourses: CourseConfig[]) {
+    return pageCourses.map((courseConfig) => {
+      const course = courseConfig.name;
       const items: AssignmentItem[] = (byCourse.get(course) ?? []).map((a) => ({
         name: a.name,
         grade: data.assignmentGrades[a.id] ?? "",
@@ -431,8 +437,8 @@ function StudentPages({ student, assignments, courseSettings, data }: Props) {
       return {
         name: course,
         items,
-        extraHeight: nationalTestExtraHeight(course, courseSettings),
-        nationalTestDelprov: courseSettings[course] ? NATIONAL_TEST_DELPROV[course] : undefined,
+        extraHeight: nationalTestExtraHeight(courseConfig),
+        nationalTestDelprov: shownDelprov(courseConfig),
         nationalTestGrades: data.nationalTestGrades[course] ?? {},
         notes: courseNote?.notes ?? "",
         summaryGrade: courseNote?.summaryGrade ?? "",
@@ -440,14 +446,17 @@ function StudentPages({ student, assignments, courseSettings, data }: Props) {
     });
   }
 
-  const page1Courses = buildCourses(PAGE_1_COURSES);
-  const page2Courses = buildCourses(PAGE_2_COURSES);
+  // Page 2 is always rendered, even when empty, so every student stays exactly
+  // one duplex sheet and a merged print never shifts onto the wrong side.
+  const page1Courses = buildCourses(courses.filter((c) => c.page === 1));
+  const page2Courses = buildCourses(courses.filter((c) => c.page === 2));
 
   function notesPerCourse(courses: { items: AssignmentItem[]; extraHeight: number }[], fixedOverhead: number): number {
     const assignmentRowsTotal = courses.reduce((sum, c) => {
       const rowCount = c.items.length === 0 ? 1 : Math.ceil(c.items.length / 2);
       return sum + rowCount * ASSIGNMENT_ROW_HEIGHT + c.extraHeight;
     }, 0);
+    if (courses.length === 0) return 0;
     const remaining = CONTENT_HEIGHT - fixedOverhead - assignmentRowsTotal;
     return Math.max(0, remaining / courses.length);
   }
@@ -509,23 +518,15 @@ function StudentPages({ student, assignments, courseSettings, data }: Props) {
 
 const EMPTY_BUNDLE: StudentDataBundle = { assignmentGrades: {}, nationalTestGrades: {}, courseNotes: {} };
 
-export function StudentPdfDocument({ student, assignments, courseSettings, data }: Props) {
-  return (
-    <Document>
-      <StudentPages student={student} assignments={assignments} courseSettings={courseSettings} data={data} />
-    </Document>
-  );
-}
-
 export function AllStudentsPdfDocument({
   students,
   assignments,
-  courseSettings,
+  coursesForGroup,
   dataByStudentId,
 }: {
   students: Pick<Student, "id" | "firstName" | "lastName" | "group">[];
   assignments: Pick<Assignment, "id" | "course" | "name">[];
-  courseSettings: Record<string, boolean>;
+  coursesForGroup: (group: string) => CourseConfig[];
   dataByStudentId: Map<string, StudentDataBundle>;
 }) {
   return (
@@ -535,7 +536,7 @@ export function AllStudentsPdfDocument({
           key={student.id}
           student={student}
           assignments={assignments}
-          courseSettings={courseSettings}
+          courses={coursesForGroup(student.group)}
           data={dataByStudentId.get(student.id) ?? EMPTY_BUNDLE}
         />
       ))}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   listStudents,
   deleteStudent,
@@ -7,30 +7,30 @@ import {
   unarchiveStudent,
   bulkArchiveStudents,
   bulkUpdateGroup,
+  openStudentsPdf,
   type Student,
   type StatusFilter,
 } from "../api/students";
-
-type SortField = "firstName" | "lastName" | "group";
-type SortDirection = "asc" | "desc";
-
-// Klass codes follow a "<program><startyear>" convention (e.g. "SA25", "EK25"),
-// so the trailing digits are the intake year shared across parallel programs.
-function extractYear(group: string): string | null {
-  const match = group.match(/(\d+)$/);
-  return match ? match[1] : null;
-}
+import { errorMessage } from "../api/http";
+import {
+  applyFilters,
+  DEFAULT_FILTERS,
+  extractYear,
+  filtersQuery,
+  filtersToParams,
+  readFilters,
+  type SortField,
+  type StudentFilters,
+} from "../studentFilters";
 
 export default function StudentListPage() {
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
-  const [sortField, setSortField] = useState<SortField>("lastName");
-  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const filters = useMemo(() => readFilters(searchParams), [searchParams]);
+  const { q: search, klass: groupFilter, year: yearFilter, status: statusFilter, sort: sortField, dir: sortDirection } =
+    filters;
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [search, setSearch] = useState("");
-  const [groupFilter, setGroupFilter] = useState("");
-  const [yearFilter, setYearFilter] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
   const [rowError, setRowError] = useState("");
   const [bulkGroup, setBulkGroup] = useState("");
   const [bulkMessage, setBulkMessage] = useState("");
@@ -61,43 +61,36 @@ export default function StudentListPage() {
     );
   }, [students]);
 
-  const filteredStudents = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return students.filter((s) => {
-      if (groupFilter && s.group !== groupFilter) return false;
-      if (yearFilter && extractYear(s.group) !== yearFilter) return false;
-      if (!q) return true;
-      return (
-        s.firstName.toLowerCase().includes(q) ||
-        s.lastName.toLowerCase().includes(q) ||
-        `${s.firstName} ${s.lastName}`.toLowerCase().includes(q)
-      );
-    });
-  }, [students, search, groupFilter, yearFilter]);
+  const sortedStudents = useMemo(() => applyFilters(students, filters), [students, filters]);
 
-  const sortedStudents = useMemo(() => {
-    const collator = new Intl.Collator("sv");
-    const sorted = [...filteredStudents].sort((a, b) => collator.compare(a[sortField], b[sortField]));
-    return sortDirection === "asc" ? sorted : sorted.reverse();
-  }, [filteredStudents, sortField, sortDirection]);
+  // Status isn't counted: it picks which list is shown, and "Skriv ut alla"
+  // should still read naturally for e.g. the full archived list.
+  const narrowingFilters = search.trim() !== "" || groupFilter !== "" || yearFilter !== "";
+  const filtersActive = narrowingFilters || statusFilter !== "active";
 
-  const filtersActive =
-    search.trim() !== "" || groupFilter !== "" || yearFilter !== "" || statusFilter !== "active";
+  // replace: typing in the search box shouldn't push one history entry per key.
+  function updateFilters(patch: Partial<StudentFilters>) {
+    setSearchParams(filtersToParams({ ...filters, ...patch }), { replace: true });
+  }
 
   function clearFilters() {
-    setSearch("");
-    setGroupFilter("");
-    setYearFilter("");
-    setStatusFilter("active");
+    updateFilters({ q: "", klass: "", year: "", status: DEFAULT_FILTERS.status });
   }
 
   function handleSort(field: SortField) {
     if (field === sortField) {
-      setSortDirection((d) => (d === "asc" ? "desc" : "asc"));
+      updateFilters({ dir: sortDirection === "asc" ? "desc" : "asc" });
     } else {
-      setSortField(field);
-      setSortDirection("asc");
+      updateFilters({ sort: field, dir: "asc" });
     }
+  }
+
+  function printSelected() {
+    // Print in the list's current sort order, not click order. Selected
+    // students hidden by the current filter still print, after the visible ones.
+    const visible = sortedStudents.filter((s) => selectedIds.has(s.id)).map((s) => s.id);
+    const hidden = [...selectedIds].filter((id) => !visible.includes(id));
+    openStudentsPdf([...visible, ...hidden]);
   }
 
   function sortArrow(field: SortField) {
@@ -105,9 +98,20 @@ export default function StudentListPage() {
     return <span className="sort-arrow">{sortDirection === "asc" ? "▲" : "▼"}</span>;
   }
 
-  async function handleDelete(id: string) {
-    await deleteStudent(id);
-    refresh();
+  async function handleDelete(student: Student) {
+    const ok = window.confirm(
+      `Ta bort ${student.firstName} ${student.lastName} permanent?\n\n` +
+        "Alla betyg och anteckningar för eleven raderas och kan inte återställas. " +
+        "Vill du bara dölja eleven (t.ex. när hen slutat), använd Arkivera istället.",
+    );
+    if (!ok) return;
+    setRowError("");
+    try {
+      await deleteStudent(student.id);
+      refresh();
+    } catch (err) {
+      setRowError(errorMessage(err));
+    }
   }
 
   async function handleArchive(id: string) {
@@ -116,7 +120,7 @@ export default function StudentListPage() {
       await archiveStudent(id);
       refresh();
     } catch (err) {
-      setRowError(err instanceof Error ? err.message : "Något gick fel, försök igen.");
+      setRowError(errorMessage(err));
     }
   }
 
@@ -126,7 +130,7 @@ export default function StudentListPage() {
       await unarchiveStudent(id);
       refresh();
     } catch (err) {
-      setRowError(err instanceof Error ? err.message : "Något gick fel, försök igen.");
+      setRowError(errorMessage(err));
     }
   }
 
@@ -138,7 +142,7 @@ export default function StudentListPage() {
       setBulkMessage(`${result.updated} arkiverade`);
       refresh();
     } catch (err) {
-      setBulkMessage(err instanceof Error ? err.message : "Något gick fel, försök igen.");
+      setBulkMessage(errorMessage(err));
     } finally {
       setBulkBusy(false);
     }
@@ -158,7 +162,7 @@ export default function StudentListPage() {
       setBulkGroup("");
       refresh();
     } catch (err) {
-      setBulkMessage(err instanceof Error ? err.message : "Något gick fel, försök igen.");
+      setBulkMessage(errorMessage(err));
     } finally {
       setBulkBusy(false);
     }
@@ -201,19 +205,14 @@ export default function StudentListPage() {
             Importera elever
           </Link>
           {selectedIds.size > 0 && (
-            <a
-              className="btn"
-              href={`/api/students/pdf/selected?ids=${[...selectedIds].join(",")}`}
-              target="_blank"
-              rel="noreferrer"
-            >
+            <button type="button" className="btn" onClick={printSelected}>
               Skriv ut markerade ({selectedIds.size})
-            </a>
+            </button>
           )}
-          {students.length > 0 && (
-            <a className="btn" href="/api/students/pdf/all" target="_blank" rel="noreferrer">
-              Skriv ut alla ({students.length})
-            </a>
+          {sortedStudents.length > 0 && (
+            <button type="button" className="btn" onClick={() => openStudentsPdf(sortedStudents.map((s) => s.id))}>
+              {narrowingFilters ? "Skriv ut filtrerade" : "Skriv ut alla"} ({sortedStudents.length})
+            </button>
           )}
         </div>
       </div>
@@ -241,8 +240,8 @@ export default function StudentListPage() {
       {bulkMessage && <p className="hint">{bulkMessage}</p>}
       {rowError && <p className="hint" style={{ color: "var(--color-danger)" }}>{rowError}</p>}
       <div className="list-filters">
-        <input type="text" placeholder="Sök namn…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select value={groupFilter} onChange={(e) => setGroupFilter(e.target.value)}>
+        <input type="text" placeholder="Sök namn…" value={search} onChange={(e) => updateFilters({ q: e.target.value })} />
+        <select value={groupFilter} onChange={(e) => updateFilters({ klass: e.target.value })}>
           <option value="">Alla klasser</option>
           {groups.map((g) => (
             <option key={g} value={g}>
@@ -250,7 +249,7 @@ export default function StudentListPage() {
             </option>
           ))}
         </select>
-        <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)}>
+        <select value={yearFilter} onChange={(e) => updateFilters({ year: e.target.value })}>
           <option value="">Alla årskullar</option>
           {years.map((y) => (
             <option key={y} value={y}>
@@ -258,7 +257,7 @@ export default function StudentListPage() {
             </option>
           ))}
         </select>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}>
+        <select value={statusFilter} onChange={(e) => updateFilters({ status: e.target.value as StatusFilter })}>
           <option value="active">Aktiva</option>
           <option value="archived">Arkiverade</option>
           <option value="all">Alla</option>
@@ -316,7 +315,7 @@ export default function StudentListPage() {
                   <td>{s.group}</td>
                   <td>
                     <div className="actions">
-                      <Link className="btn btn-sm" to={`/students/${s.id}/edit`}>
+                      <Link className="btn btn-sm" to={`/students/${s.id}/edit${filtersQuery(filters)}`}>
                         Redigera
                       </Link>
                       <a className="btn btn-sm" href={`/api/students/${s.id}/pdf`} target="_blank" rel="noreferrer">
@@ -331,7 +330,7 @@ export default function StudentListPage() {
                           Arkivera
                         </button>
                       )}
-                      <button className="btn btn-sm btn-danger" onClick={() => handleDelete(s.id)}>
+                      <button className="btn btn-sm btn-danger" onClick={() => handleDelete(s)}>
                         Ta bort
                       </button>
                     </div>

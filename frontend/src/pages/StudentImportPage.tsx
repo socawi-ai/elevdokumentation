@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { importStudents, listStudents, type Student } from "../api/students";
+import { errorMessage } from "../api/http";
 
 type RowStatus = "ok" | "invalid" | "duplicate";
 
@@ -60,6 +61,7 @@ function markDuplicates(rows: ParsedRow[], existing: Student[]): ParsedRow[] {
 export default function StudentImportPage() {
   const [text, setText] = useState("");
   const [importing, setImporting] = useState(false);
+  const [error, setError] = useState("");
   const [existingStudents, setExistingStudents] = useState<Student[]>([]);
   const navigate = useNavigate();
 
@@ -87,9 +89,12 @@ export default function StudentImportPage() {
 
   async function handleImport() {
     setImporting(true);
+    setError("");
     try {
       await importStudents(validRows.map(({ firstName, lastName, group }) => ({ firstName, lastName, group })));
       navigate("/");
+    } catch (err) {
+      setError(errorMessage(err));
     } finally {
       setImporting(false);
     }
@@ -152,6 +157,11 @@ export default function StudentImportPage() {
         </>
       )}
 
+      {error && (
+        <p className="hint" style={{ marginTop: "1rem", color: "var(--color-danger)" }}>
+          {error}
+        </p>
+      )}
       <p style={{ marginTop: "1.25rem" }}>
         <button className="btn btn-primary" onClick={handleImport} disabled={validRows.length === 0 || importing}>
           {importing ? "Importerar…" : `Importera ${validRows.length} elever`}

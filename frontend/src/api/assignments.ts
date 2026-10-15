@@ -1,16 +1,12 @@
+import { handle, sendJson } from "./http";
+
 export interface Assignment {
   id: string;
   course: string;
   name: string;
+  sortOrder: number;
   createdAt: string;
-}
-
-async function handle<T>(res: Response): Promise<T> {
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.error ?? `Request failed with status ${res.status}`);
-  }
-  return res.status === 204 ? (undefined as T) : res.json();
+  gradeCount: number;
 }
 
 export function listAssignments(): Promise<Assignment[]> {
@@ -18,11 +14,15 @@ export function listAssignments(): Promise<Assignment[]> {
 }
 
 export function createAssignment(data: { course: string; name: string }): Promise<Assignment> {
-  return fetch("/api/assignments", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  }).then((res) => handle(res));
+  return sendJson("/api/assignments", "POST", data);
+}
+
+export function renameAssignment(id: string, name: string): Promise<Assignment> {
+  return sendJson(`/api/assignments/${id}`, "PUT", { name });
+}
+
+export function reorderAssignments(ids: string[]): Promise<void> {
+  return sendJson("/api/assignments/reorder", "PUT", { ids });
 }
 
 export function deleteAssignment(id: string): Promise<void> {

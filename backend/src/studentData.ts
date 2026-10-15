@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "./db.js";
-import { COURSES, NATIONAL_TEST_COURSES, NATIONAL_TEST_DELPROV, type CourseName } from "./courses.js";
+import type { CourseConfig } from "./courses.js";
 
 export interface StudentDataBundle {
   assignmentGrades: Record<string, string>;
@@ -8,10 +8,13 @@ export interface StudentDataBundle {
   courseNotes: Record<string, { notes: string; summaryGrade: string }>;
 }
 
+// Sparse: only the keys present are written. A courseNotes entry may carry
+// just one of its two fields (the grade grid only edits summaryGrade); the
+// missing one keeps its stored value.
 export interface StudentDataBundleInput {
   assignmentGrades: Record<string, string>;
   nationalTestGrades: Record<string, Record<string, string>>;
-  courseNotes: Record<string, { notes: string; summaryGrade: string }>;
+  courseNotes: Record<string, { notes?: string; summaryGrade?: string }>;
 }
 
 function emptyBundle(): StudentDataBundle {
@@ -51,6 +54,7 @@ export async function getStudentDataBundle(studentId: string): Promise<StudentDa
 
 export function validateStudentDataBundleInput(
   input: unknown,
+  courses: CourseConfig[],
 ): { ok: true; value: StudentDataBundleInput } | { ok: false; error: string } {
   if (typeof input !== "object" || input === null) {
     return { ok: false, error: "Ogiltig data" };
@@ -71,13 +75,13 @@ export function validateStudentDataBundleInput(
     return { ok: false, error: "Ogiltig data" };
   }
   for (const [course, delprovMap] of Object.entries(nationalTestGrades as Record<string, unknown>)) {
-    if (!(NATIONAL_TEST_COURSES as readonly string[]).includes(course)) {
+    const validDelprov = courses.find((c) => c.name === course)?.nationalTestDelprov ?? [];
+    if (validDelprov.length === 0) {
       return { ok: false, error: "Ogiltig kurs eller delprov" };
     }
     if (typeof delprovMap !== "object" || delprovMap === null) {
       return { ok: false, error: "Ogiltig data" };
     }
-    const validDelprov: readonly string[] = NATIONAL_TEST_DELPROV[course as CourseName] ?? [];
     for (const [delprov, grade] of Object.entries(delprovMap as Record<string, unknown>)) {
       if (!validDelprov.includes(delprov)) return { ok: false, error: "Ogiltig kurs eller delprov" };
       if (typeof grade !== "string") return { ok: false, error: "Ogiltig data" };
@@ -88,7 +92,7 @@ export function validateStudentDataBundleInput(
     return { ok: false, error: "Ogiltig data" };
   }
   for (const [course, data] of Object.entries(courseNotes as Record<string, unknown>)) {
-    if (!(COURSES as readonly string[]).includes(course)) {
+    if (!courses.some((c) => c.name === course)) {
       return { ok: false, error: "Ogiltig kurs" };
     }
     if (typeof data !== "object" || data === null) return { ok: false, error: "Ogiltig data" };
@@ -106,7 +110,7 @@ export function validateStudentDataBundleInput(
     value: {
       assignmentGrades: assignmentGrades as Record<string, string>,
       nationalTestGrades: nationalTestGrades as Record<string, Record<string, string>>,
-      courseNotes: courseNotes as Record<string, { notes: string; summaryGrade: string }>,
+      courseNotes: courseNotes as Record<string, { notes?: string; summaryGrade?: string }>,
     },
   };
 }
@@ -160,9 +164,18 @@ export async function saveStudentDataBundle(
     }
   }
 
+  const partialNoteCourses = Object.entries(input.courseNotes)
+    .filter(([, data]) => data.notes === undefined || data.summaryGrade === undefined)
+    .map(([course]) => course);
+  const storedNotes =
+    partialNoteCourses.length === 0
+      ? []
+      : await prisma.courseNote.findMany({ where: { studentId, course: { in: partialNoteCourses } } });
+
   for (const [course, data] of Object.entries(input.courseNotes)) {
-    const notes = data.notes ?? "";
-    const summaryGrade = (data.summaryGrade ?? "").trim();
+    const stored = storedNotes.find((n) => n.course === course);
+    const notes = data.notes ?? stored?.notes ?? "";
+    const summaryGrade = (data.summaryGrade ?? stored?.summaryGrade ?? "").trim();
     if (notes.trim() === "" && summaryGrade === "") {
       operations.push(prisma.courseNote.deleteMany({ where: { studentId, course } }));
     } else {

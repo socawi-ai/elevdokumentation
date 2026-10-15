@@ -4,7 +4,8 @@ import { fileURLToPath } from "node:url";
 import express, { type ErrorRequestHandler } from "express";
 import { studentsRouter } from "./routes/students.js";
 import { assignmentsRouter } from "./routes/assignments.js";
-import { courseSettingsRouter } from "./routes/courseSettings.js";
+import { coursesRouter } from "./routes/courses.js";
+import { groupCoursesRouter } from "./routes/groupCourses.js";
 
 export const app = express();
 
@@ -14,6 +15,9 @@ export const app = express();
 // server serves the built frontend below, so /api is same-origin there too.
 // A real cross-origin caller was never a supported use case.
 app.use(express.json());
+// For the print form, which POSTs a list of student ids to open the PDF in a
+// new tab (see POST /api/students/pdf/selected).
+app.use(express.urlencoded({ extended: false }));
 
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok" });
@@ -21,7 +25,8 @@ app.get("/api/health", (_req, res) => {
 
 app.use("/api/students", studentsRouter);
 app.use("/api/assignments", assignmentsRouter);
-app.use("/api/course-settings", courseSettingsRouter);
+app.use("/api/courses", coursesRouter);
+app.use("/api/group-courses", groupCoursesRouter);
 
 // Anything under /api that didn't match a route above is a 404, not a
 // frontend page — must come before the static/SPA-fallback handling below.

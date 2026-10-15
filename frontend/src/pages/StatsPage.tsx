@@ -1,21 +1,28 @@
 import { useEffect, useState } from "react";
-import { COURSES, NATIONAL_TEST_COURSES } from "../courses";
+import { Link } from "react-router-dom";
 import { getStudentStats, type StudentStats } from "../api/students";
+import { errorMessage } from "../api/http";
+import { useCourses } from "../coursesContext";
 
 export default function StatsPage() {
   const [stats, setStats] = useState<StudentStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [groupFilter, setGroupFilter] = useState("");
+  const [error, setError] = useState("");
+  const { courses } = useCourses();
 
   function refresh() {
     setLoading(true);
+    setError("");
     getStudentStats(groupFilter || undefined)
       .then(setStats)
+      .catch((err) => setError(errorMessage(err)))
       .finally(() => setLoading(false));
   }
 
   useEffect(refresh, [groupFilter]);
 
+  if (error) return <p className="hint" style={{ color: "var(--color-danger)" }}>{error}</p>;
   if (loading || !stats) return <p className="loading-state">Laddar…</p>;
 
   return (
@@ -34,17 +41,21 @@ export default function StatsPage() {
         </select>
       </div>
       <div className="course-grid">
-        {COURSES.map((course) => {
+        {courses.map(({ name: course, nationalTestDelprov }) => {
           const c = stats.byCourse[course];
           if (!c || c.totalStudents === 0) {
             return (
               <div className="course-card" key={course}>
                 <h2>{course}</h2>
-                <p className="hint">Inga elever att visa statistik för.</p>
+                <p className="hint">
+                  {groupFilter ? `${groupFilter} läser inte kursen.` : "Inga elever att visa statistik för."}
+                </p>
               </div>
             );
           }
-          const isNationalTestCourse = (NATIONAL_TEST_COURSES as readonly string[]).includes(course);
+          const isNationalTestCourse = nationalTestDelprov.length > 0;
+          const gridParams = new URLSearchParams({ course });
+          if (groupFilter) gridParams.set("klass", groupFilter);
           const tallyEntries = Object.entries(c.summaryGradeTally).sort(
             (a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "sv"),
           );
@@ -75,6 +86,9 @@ export default function StatsPage() {
                   {c.assignmentGradesFilled} av {c.assignmentGradesPossible} uppgiftsbetyg ifyllda
                 </p>
               )}
+              <Link className="btn btn-sm" to={`/betyg?${gridParams}`}>
+                {c.assignmentGradesFilled < c.assignmentGradesPossible ? "Fyll i saknade betyg →" : "Öppna betyg →"}
+              </Link>
             </div>
           );
         })}

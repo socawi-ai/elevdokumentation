@@ -21,18 +21,44 @@ model Student {
   courseNotes        CourseNote[]
 }
 
+// Referenced by name (not a surrogate id) from every per-course table, with
+// onUpdate: Cascade so renaming a course is a single update on this row.
+model Course {
+  name                String  @id
+  sortOrder           Int     @default(0)
+  // Which side of the duplex PDF sheet the course is printed on (1 or 2).
+  page                Int     @default(1)
+  // JSON array of delprov names, e.g. ["Delprov A","Delprov B"]; "[]" means
+  // the course has no nationella prov.
+  nationalTestDelprov String  @default("[]")
+  showNationalTest    Boolean @default(false)
+
+  assignments        Assignment[]
+  nationalTestGrades NationalTestGrade[]
+  courseNotes        CourseNote[]
+  groupCourses       GroupCourse[]
+}
+
+// Which courses a klass takes. A klass with no rows here takes every course,
+// so a new klass (or one never configured) gets the full PDF by default.
+model GroupCourse {
+  group  String
+  course String
+
+  courseRef Course @relation(fields: [course], references: [name], onDelete: Cascade, onUpdate: Cascade)
+
+  @@id([group, course])
+}
+
 model Assignment {
   id        String   @id @default(cuid())
   course    String
   name      String
+  sortOrder Int      @default(0)
   createdAt DateTime @default(now())
 
-  grades AssignmentGrade[]
-}
-
-model CourseSetting {
-  course           String  @id
-  showNationalTest Boolean @default(false)
+  courseRef Course            @relation(fields: [course], references: [name], onDelete: Cascade, onUpdate: Cascade)
+  grades    AssignmentGrade[]
 }
 
 model AssignmentGrade {
@@ -54,7 +80,8 @@ model NationalTestGrade {
   delprov   String
   grade     String
 
-  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  courseRef Course  @relation(fields: [course], references: [name], onDelete: Cascade, onUpdate: Cascade)
 
   @@unique([studentId, course, delprov])
 }
@@ -66,7 +93,8 @@ model CourseNote {
   notes        String @default("")
   summaryGrade String @default("")
 
-  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  courseRef Course  @relation(fields: [course], references: [name], onDelete: Cascade, onUpdate: Cascade)
 
   @@unique([studentId, course])
 }

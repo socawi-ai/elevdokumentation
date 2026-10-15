@@ -1,16 +1,59 @@
 import { Router } from "express";
+import type { Response } from "express";
+import type { Student } from "@prisma/client";
 import { renderToStream } from "@react-pdf/renderer";
 import { prisma } from "../db.js";
-import { StudentPdfDocument, AllStudentsPdfDocument } from "../pdf/StudentPdfDocument.js";
+import { AllStudentsPdfDocument } from "../pdf/StudentPdfDocument.js";
 import { getStudentDataBundle, getStudentDataBundles, saveStudentDataBundle, validateStudentDataBundleInput } from "../studentData.js";
 import { asyncHandler } from "../asyncHandler.js";
-import { COURSES } from "../courses.js";
+import { coursesForGroup, getGroupCourseMap, groupTakesCourse, listCourses } from "../courses.js";
+import { ASSIGNMENT_ORDER } from "./assignments.js";
 
 export const studentsRouter = Router();
 
-async function getCourseSettingsMap(): Promise<Record<string, boolean>> {
-  const rows = await prisma.courseSetting.findMany();
-  return Object.fromEntries(rows.map((r) => [r.course, r.showNationalTest]));
+const MAX_PDF_STUDENTS = 500;
+
+async function sendStudentsPdf(res: Response, students: Student[], filename: string): Promise<void> {
+  const [assignments, courses, groupCourseMap, dataByStudentId] = await Promise.all([
+    prisma.assignment.findMany({ orderBy: ASSIGNMENT_ORDER }),
+    listCourses(),
+    getGroupCourseMap(),
+    getStudentDataBundles(students.map((s) => s.id)),
+  ]);
+  const stream = await renderToStream(
+    <AllStudentsPdfDocument
+      students={students}
+      assignments={assignments}
+      coursesForGroup={(group) => coursesForGroup(courses, groupCourseMap, group)}
+      dataByStudentId={dataByStudentId}
+    />,
+  );
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `inline; filename="${filename}"`);
+  stream.pipe(res);
+}
+
+// Prints the given students in the given order. Accepts ids either as a
+// GET query string (?ids=a,b,c) or a POSTed form field — the frontend posts
+// a form for big filtered lists, since 500 ids would overflow a URL.
+async function sendSelectedPdf(rawIds: unknown, res: Response): Promise<void> {
+  const ids = typeof rawIds === "string" ? rawIds.split(",").filter(Boolean) : [];
+  if (ids.length === 0) {
+    res.status(400).json({ error: "Inga elever valda" });
+    return;
+  }
+  if (ids.length > MAX_PDF_STUDENTS) {
+    res.status(400).json({ error: "För många elever valda" });
+    return;
+  }
+  const students = await prisma.student.findMany({ where: { id: { in: ids } } });
+  if (students.length === 0) {
+    res.status(400).json({ error: "Inga elever valda" });
+    return;
+  }
+  const byId = new Map(students.map((s) => [s.id, s]));
+  const orderedStudents = ids.map((id) => byId.get(id)).filter((s): s is Student => Boolean(s));
+  await sendStudentsPdf(res, orderedStudents, "valda-elever.pdf");
 }
 
 function normalizeKey(firstName: string, lastName: string, group: string): string {
@@ -65,15 +108,18 @@ studentsRouter.get(
 
     const students = await prisma.student.findMany({
       where: { ...statusWhere(status), ...(group ? { group } : {}) },
-      select: { id: true },
+      select: { id: true, group: true },
     });
     const studentIds = students.map((s) => s.id);
-    const totalStudents = studentIds.length;
 
     const activeStudents = await prisma.student.findMany({ where: { archived: false }, select: { group: true } });
     const groups = [...new Set(activeStudents.map((s) => s.group))].sort((a, b) => a.localeCompare(b, "sv"));
 
-    const assignments = await prisma.assignment.findMany();
+    const [assignments, courses, groupCourseMap] = await Promise.all([
+      prisma.assignment.findMany(),
+      listCourses(),
+      getGroupCourseMap(),
+    ]);
     const assignmentIdsByCourse = new Map<string, string[]>();
     for (const a of assignments) {
       if (!assignmentIdsByCourse.has(a.course)) assignmentIdsByCourse.set(a.course, []);
@@ -88,8 +134,14 @@ studentsRouter.get(
             prisma.courseNote.findMany({ where: { studentId: { in: studentIds }, summaryGrade: { not: "" } } }),
           ]);
 
+    const groupByStudentId = new Map(students.map((s) => [s.id, s.group]));
     const filledByAssignmentId = new Map<string, number>();
+    const courseByAssignmentId = new Map(assignments.map((a) => [a.id, a.course]));
     for (const g of assignmentGrades) {
+      // Only count grades from students whose klass takes the course, so
+      // "filled" can never exceed "possible".
+      const course = courseByAssignmentId.get(g.assignmentId);
+      if (!course || !groupTakesCourse(groupCourseMap, groupByStudentId.get(g.studentId) ?? "", course)) continue;
       filledByAssignmentId.set(g.assignmentId, (filledByAssignmentId.get(g.assignmentId) ?? 0) + 1);
     }
 
@@ -104,13 +156,16 @@ studentsRouter.get(
       }
     > = {};
 
-    for (const course of COURSES) {
+    for (const { name: course } of courses) {
+      const totalStudents = students.filter((s) => groupTakesCourse(groupCourseMap, s.group, course)).length;
       const courseAssignmentIds = assignmentIdsByCourse.get(course) ?? [];
       const assignmentGradesFilled = courseAssignmentIds.reduce(
         (sum, id) => sum + (filledByAssignmentId.get(id) ?? 0),
         0,
       );
-      const notesForCourse = courseNotes.filter((n) => n.course === course);
+      const notesForCourse = courseNotes.filter(
+        (n) => n.course === course && groupTakesCourse(groupCourseMap, groupByStudentId.get(n.studentId) ?? "", course),
+      );
       const summaryGradeTally: Record<string, number> = {};
       for (const n of notesForCourse) {
         summaryGradeTally[n.summaryGrade] = (summaryGradeTally[n.summaryGrade] ?? 0) + 1;
@@ -137,58 +192,60 @@ studentsRouter.get(
       res.status(400).json({ error: "Inga elever att skriva ut" });
       return;
     }
-    const assignments = await prisma.assignment.findMany({ orderBy: { createdAt: "asc" } });
-    const courseSettings = await getCourseSettingsMap();
-    const dataByStudentId = await getStudentDataBundles(students.map((s) => s.id));
-    const stream = await renderToStream(
-      <AllStudentsPdfDocument
-        students={students}
-        assignments={assignments}
-        courseSettings={courseSettings}
-        dataByStudentId={dataByStudentId}
-      />,
-    );
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `inline; filename="alla-elever.pdf"`);
-    stream.pipe(res);
+    await sendStudentsPdf(res, students, "alla-elever.pdf");
   }),
 );
 
 studentsRouter.get(
   "/pdf/selected",
   asyncHandler(async (req, res) => {
-    const idsParam = req.query.ids;
-    const ids = typeof idsParam === "string" ? idsParam.split(",").filter(Boolean) : [];
-    if (ids.length === 0) {
-      res.status(400).json({ error: "Inga elever valda" });
-      return;
-    }
-    if (ids.length > 200) {
-      res.status(400).json({ error: "För många elever valda" });
-      return;
-    }
-    const students = await prisma.student.findMany({ where: { id: { in: ids } } });
-    if (students.length === 0) {
-      res.status(400).json({ error: "Inga elever valda" });
-      return;
-    }
-    const byId = new Map(students.map((s) => [s.id, s]));
-    const orderedStudents = ids.map((id) => byId.get(id)).filter((s): s is (typeof students)[number] => Boolean(s));
+    await sendSelectedPdf(req.query.ids, res);
+  }),
+);
 
-    const assignments = await prisma.assignment.findMany({ orderBy: { createdAt: "asc" } });
-    const courseSettings = await getCourseSettingsMap();
-    const dataByStudentId = await getStudentDataBundles(orderedStudents.map((s) => s.id));
-    const stream = await renderToStream(
-      <AllStudentsPdfDocument
-        students={orderedStudents}
-        assignments={assignments}
-        courseSettings={courseSettings}
-        dataByStudentId={dataByStudentId}
-      />,
-    );
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `inline; filename="valda-elever.pdf"`);
-    stream.pipe(res);
+studentsRouter.post(
+  "/pdf/selected",
+  asyncHandler(async (req, res) => {
+    await sendSelectedPdf(req.body?.ids, res);
+  }),
+);
+
+// Everything the grade grid needs for one course in one request: the active
+// students (optionally one klass) whose klass takes the course, plus their
+// grades for that course.
+studentsRouter.get(
+  "/grid",
+  asyncHandler(async (req, res) => {
+    const course = typeof req.query.course === "string" ? req.query.course : "";
+    const group = typeof req.query.group === "string" && req.query.group.trim() !== "" ? req.query.group : undefined;
+    if (!(await prisma.course.findUnique({ where: { name: course } }))) {
+      res.status(400).json({ error: "Ogiltig kurs" });
+      return;
+    }
+    const [allStudents, groupCourseMap, assignments] = await Promise.all([
+      prisma.student.findMany({ where: { archived: false, ...(group ? { group } : {}) }, orderBy: { lastName: "asc" } }),
+      getGroupCourseMap(),
+      prisma.assignment.findMany({ where: { course }, select: { id: true } }),
+    ]);
+    const students = allStudents.filter((s) => groupTakesCourse(groupCourseMap, s.group, course));
+    const bundles = await getStudentDataBundles(students.map((s) => s.id));
+    const assignmentIds = new Set(assignments.map((a) => a.id));
+
+    const grades: Record<
+      string,
+      { assignmentGrades: Record<string, string>; nationalTestGrades: Record<string, string>; summaryGrade: string }
+    > = {};
+    for (const s of students) {
+      const bundle = bundles.get(s.id)!;
+      grades[s.id] = {
+        assignmentGrades: Object.fromEntries(
+          Object.entries(bundle.assignmentGrades).filter(([id]) => assignmentIds.has(id)),
+        ),
+        nationalTestGrades: bundle.nationalTestGrades[course] ?? {},
+        summaryGrade: bundle.courseNotes[course]?.summaryGrade ?? "",
+      };
+    }
+    res.json({ students, grades });
   }),
 );
 
@@ -212,16 +269,8 @@ studentsRouter.get(
       res.status(404).json({ error: "Eleven hittades inte" });
       return;
     }
-    const assignments = await prisma.assignment.findMany({ orderBy: { createdAt: "asc" } });
-    const courseSettings = await getCourseSettingsMap();
-    const data = await getStudentDataBundle(student.id);
-    const stream = await renderToStream(
-      <StudentPdfDocument student={student} assignments={assignments} courseSettings={courseSettings} data={data} />,
-    );
     const safeName = `${student.firstName}-${student.lastName}`.replace(/[^\w-]+/g, "_");
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `inline; filename="${safeName}.pdf"`);
-    stream.pipe(res);
+    await sendStudentsPdf(res, [student], `${safeName}.pdf`);
   }),
 );
 
@@ -246,7 +295,7 @@ studentsRouter.put(
       res.status(404).json({ error: "Eleven hittades inte" });
       return;
     }
-    const validated = validateStudentDataBundleInput(req.body);
+    const validated = validateStudentDataBundleInput(req.body, await listCourses());
     if (!validated.ok) {
       res.status(400).json({ error: validated.error });
       return;

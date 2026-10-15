@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
-import { Routes, Route, NavLink } from "react-router-dom";
+import { Routes, Route, NavLink, Navigate } from "react-router-dom";
 import StudentListPage from "./pages/StudentListPage";
 import StudentFormPage from "./pages/StudentFormPage";
 import StudentImportPage from "./pages/StudentImportPage";
 import AssignmentsPage from "./pages/AssignmentsPage";
 import StatsPage from "./pages/StatsPage";
+import GradeGridPage from "./pages/GradeGridPage";
+import { CoursesProvider } from "./coursesContext";
 import { getEffectiveTheme, getStoredTheme, setTheme, type Theme } from "./theme";
 
 function ThemeToggle() {
@@ -40,7 +42,7 @@ function ThemeToggle() {
 
 export default function App() {
   return (
-    <div>
+    <CoursesProvider>
       <header className="app-header">
         <NavLink to="/" className="brand">
           Elevdokumentation
@@ -49,8 +51,11 @@ export default function App() {
           <NavLink to="/" end className={({ isActive }) => (isActive ? "active" : undefined)}>
             Elever
           </NavLink>
-          <NavLink to="/uppgifter" className={({ isActive }) => (isActive ? "active" : undefined)}>
-            Uppgifter
+          <NavLink to="/betyg" className={({ isActive }) => (isActive ? "active" : undefined)}>
+            Betyg
+          </NavLink>
+          <NavLink to="/kurser" className={({ isActive }) => (isActive ? "active" : undefined)}>
+            Kurser
           </NavLink>
           <NavLink to="/statistik" className={({ isActive }) => (isActive ? "active" : undefined)}>
             Statistik
@@ -64,11 +69,13 @@ export default function App() {
           <Route path="/students/new" element={<StudentFormPage />} />
           <Route path="/students/import" element={<StudentImportPage />} />
           <Route path="/students/:id/edit" element={<StudentFormPage />} />
-          <Route path="/uppgifter" element={<AssignmentsPage />} />
+          <Route path="/betyg" element={<GradeGridPage />} />
+          <Route path="/kurser" element={<AssignmentsPage />} />
+          <Route path="/uppgifter" element={<Navigate to="/kurser" replace />} />
           <Route path="/statistik" element={<StatsPage />} />
         </Routes>
       </main>
-      <footer className="app-footer">v0.3</footer>
-    </div>
+      <footer className="app-footer">v0.4</footer>
+    </CoursesProvider>
   );
 }

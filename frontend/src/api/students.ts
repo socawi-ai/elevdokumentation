@@ -1,3 +1,5 @@
+import { handle, sendJson } from "./http";
+
 export interface Student {
   id: string;
   firstName: string;
@@ -25,14 +27,6 @@ export interface StudentStats {
   byCourse: Record<string, CourseStats>;
 }
 
-async function handle<T>(res: Response): Promise<T> {
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.error ?? `Request failed with status ${res.status}`);
-  }
-  return res.status === 204 ? (undefined as T) : res.json();
-}
-
 export function listStudents(status: StatusFilter = "active"): Promise<Student[]> {
   return fetch(`/api/students?status=${status}`).then((res) => handle(res));
 }
@@ -42,19 +36,11 @@ export function getStudent(id: string): Promise<Student> {
 }
 
 export function createStudent(data: StudentInput): Promise<Student> {
-  return fetch("/api/students", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  }).then((res) => handle(res));
+  return sendJson("/api/students", "POST", data);
 }
 
 export function updateStudent(id: string, data: StudentInput): Promise<Student> {
-  return fetch(`/api/students/${id}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  }).then((res) => handle(res));
+  return sendJson(`/api/students/${id}`, "PUT", data);
 }
 
 export function deleteStudent(id: string): Promise<void> {
@@ -62,11 +48,7 @@ export function deleteStudent(id: string): Promise<void> {
 }
 
 export function importStudents(students: StudentInput[]): Promise<{ count: number; duplicates: number }> {
-  return fetch("/api/students/import", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ students }),
-  }).then((res) => handle(res));
+  return sendJson("/api/students/import", "POST", { students });
 }
 
 export function archiveStudent(id: string): Promise<Student> {
@@ -78,25 +60,49 @@ export function unarchiveStudent(id: string): Promise<Student> {
 }
 
 export function bulkArchiveStudents(ids: string[]): Promise<{ updated: number }> {
-  return fetch("/api/students/bulk-archive", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ids }),
-  }).then((res) => handle(res));
+  return sendJson("/api/students/bulk-archive", "POST", { ids });
 }
 
 export function bulkUpdateGroup(
   ids: string[],
   group: string,
 ): Promise<{ updated: number; skipped: number; notFound: number }> {
-  return fetch("/api/students/bulk-klass", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ids, group }),
-  }).then((res) => handle(res));
+  return sendJson("/api/students/bulk-klass", "PUT", { ids, group });
 }
 
 export function getStudentStats(group?: string): Promise<StudentStats> {
   const params = group ? `?group=${encodeURIComponent(group)}` : "";
   return fetch(`/api/students/stats${params}`).then((res) => handle(res));
+}
+
+export interface GradeGrid {
+  students: Student[];
+  grades: Record<
+    string,
+    { assignmentGrades: Record<string, string>; nationalTestGrades: Record<string, string>; summaryGrade: string }
+  >;
+}
+
+export function getGradeGrid(course: string, group?: string): Promise<GradeGrid> {
+  const params = new URLSearchParams({ course });
+  if (group) params.set("group", group);
+  return fetch(`/api/students/grid?${params}`).then((res) => handle(res));
+}
+
+// Opens the merged PDF for these students (in this order) in a new tab. Posts
+// a form instead of linking to a URL, since a few hundred ids would overflow
+// the URL length limit.
+export function openStudentsPdf(ids: string[]): void {
+  const form = document.createElement("form");
+  form.method = "POST";
+  form.action = "/api/students/pdf/selected";
+  form.target = "_blank";
+  const input = document.createElement("input");
+  input.type = "hidden";
+  input.name = "ids";
+  input.value = ids.join(",");
+  form.appendChild(input);
+  document.body.appendChild(form);
+  form.submit();
+  form.remove();
 }
