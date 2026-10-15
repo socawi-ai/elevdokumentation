@@ -25,3 +25,7 @@ The app is then available at `http://localhost:3000`. The database is stored in 
 To update to a newer image later: `docker compose pull && docker compose up -d` — migrations run automatically on every start.
 
 Put this behind whatever reverse proxy + auth (e.g. TinyAuth forward-auth) you already run — the app itself has no authentication built in, so it must never be reachable directly from outside that proxy.
+
+## License
+
+Licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0). You may use, change and share it; if you share a changed version, or run one as a network service for others, you must make its source available under the same license.
